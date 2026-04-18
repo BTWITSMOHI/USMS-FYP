@@ -1,196 +1,200 @@
-import { useState } from 'react';
-import { useAuth } from '@/contexts/AuthContext';
-import { useData } from '@/contexts/DataContext';
-import Button from '@mui/material/Button';
-import TextField from '@mui/material/TextField';
-import FormControl from '@mui/material/FormControl';
-import InputLabel from '@mui/material/InputLabel';
-import Select from '@mui/material/Select';
-import MenuItem from '@mui/material/MenuItem';
-import Alert from '@mui/material/Alert';
-import { Upload, FileText, CheckCircle } from 'lucide-react';
+'use client';
+
+import { useEffect, useState } from 'react';
 import { useSnackbar } from 'notistack';
+import { useAuth } from '@/contexts/AuthContext';
+import { createProposal, fetchSupervisors } from '@/lib/proposals';
+import TextField from '@mui/material/TextField';
+import Button from '@mui/material/Button';
+import Box from '@mui/material/Box';
+import MenuItem from '@mui/material/MenuItem';
+import CircularProgress from '@mui/material/CircularProgress';
 
 interface ProposalFormProps {
-  onSuccess?: () => void;
+  onSuccess?: () => void | Promise<void>;
   onCancel?: () => void;
 }
 
+interface SupervisorOption {
+  id: number;
+  name: string;
+  email: string;
+  department?: string;
+  expertise?: string;
+  maxStudents?: number;
+  currentStudents?: number;
+}
+
+const fieldSx = {
+  '& .MuiOutlinedInput-root': {
+    borderRadius: '14px',
+    backgroundColor: '#fff',
+  },
+};
+
 export function ProposalForm({ onSuccess, onCancel }: ProposalFormProps) {
-  const { user } = useAuth();
-  const { addProposal, supervisors } = useData();
+  const { token } = useAuth();
   const { enqueueSnackbar } = useSnackbar();
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
 
-  const [formData, setFormData] = useState({
-    title: '',
-    description: '',
-    supervisorId: '',
-  });
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+  const [supervisorId, setSupervisorId] = useState('any');
+  const [supervisors, setSupervisors] = useState<SupervisorOption[]>([]);
+  const [loadingSupervisors, setLoadingSupervisors] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      // Check file size (max 10MB for demo)
-      if (file.size > 10 * 1024 * 1024) {
-        enqueueSnackbar('File size must be less than 10MB', { variant: 'error' });
+  useEffect(() => {
+    const loadSupervisors = async () => {
+      if (!token) {
+        setLoadingSupervisors(false);
         return;
       }
-      // Check file type
-      const allowedTypes = ['.pdf', '.doc', '.docx'];
-      const fileExtension = '.' + file.name.split('.').pop()?.toLowerCase();
-      if (!allowedTypes.includes(fileExtension)) {
-        enqueueSnackbar('Only PDF and Word documents are allowed', { variant: 'error' });
-        return;
+
+      try {
+        const data = await fetchSupervisors(token);
+        setSupervisors(data.supervisors);
+      } catch (error) {
+        console.error('Failed to load supervisors', error);
+        enqueueSnackbar('Failed to load supervisors', { variant: 'error' });
+      } finally {
+        setLoadingSupervisors(false);
       }
-      setUploadedFile(file);
-    }
-  };
+    };
+
+    loadSupervisors();
+  }, [token, enqueueSnackbar]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    if (!user) return;
 
-    if (!formData.title || !formData.description) {
-      enqueueSnackbar('Please fill in all required fields', { variant: 'error' });
+    if (!title.trim() || !description.trim() || !supervisorId) {
+      enqueueSnackbar('Please fill in all required fields', { variant: 'warning' });
       return;
     }
 
-    setIsSubmitting(true);
+    if (!token) {
+      enqueueSnackbar('You must be logged in', { variant: 'error' });
+      return;
+    }
 
     try {
-      // Simulate file upload delay
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      setSubmitting(true);
 
-      const supervisor = supervisors.find(s => s.id === formData.supervisorId);
+      const payload =
+        supervisorId === 'any'
+          ? {
+              title: title.trim(),
+              description: description.trim(),
+            }
+          : {
+              title: title.trim(),
+              description: description.trim(),
+              supervisorId: Number(supervisorId),
+            };
 
-      addProposal({
-        studentId: user.id,
-        studentName: user.name,
-        supervisorId: formData.supervisorId || undefined,
-        supervisorName: supervisor?.name,
-        title: formData.title,
-        description: formData.description,
-        status: 'pending',
-        documentName: uploadedFile?.name,
-        documentUrl: uploadedFile ? URL.createObjectURL(uploadedFile) : undefined,
-      });
+      await createProposal(token, payload as any);
 
-      enqueueSnackbar('Proposal submitted successfully!', { variant: 'success' });
-      
-      // Reset form
-      setFormData({ title: '', description: '', supervisorId: '' });
-      setUploadedFile(null);
-      
+      enqueueSnackbar('Proposal submitted successfully', { variant: 'success' });
+
+      setTitle('');
+      setDescription('');
+      setSupervisorId('any');
+
       if (onSuccess) {
-        onSuccess();
+        await onSuccess();
       }
     } catch (error) {
-      enqueueSnackbar('Failed to submit proposal. Please try again.', { variant: 'error' });
+      console.error('Proposal submit error:', error);
+      enqueueSnackbar('Failed to submit proposal', { variant: 'error' });
     } finally {
-      setIsSubmitting(false);
+      setSubmitting(false);
     }
   };
 
-  return (
-    <form onSubmit={handleSubmit} className="space-y-6">
-      <TextField
-        label="Project Title"
-        placeholder="e.g., Machine Learning for Healthcare Diagnosis"
-        value={formData.title}
-        onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-        required
-        fullWidth
-      />
-
-      <TextField
-        label="Project Description"
-        placeholder="Describe your project objectives, methodology, and expected outcomes..."
-        multiline
-        rows={6}
-        value={formData.description}
-        onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-        required
-        fullWidth
-        helperText="Provide a clear and detailed description of your proposed project"
-      />
-
-      <FormControl fullWidth>
-        <InputLabel>Preferred Supervisor (Optional)</InputLabel>
-        <Select
-          value={formData.supervisorId}
-          label="Preferred Supervisor (Optional)"
-          onChange={(e) => setFormData({ ...formData, supervisorId: e.target.value })}
-        >
-          <MenuItem value="">
-            <em>Select a supervisor (or leave blank for admin assignment)</em>
-          </MenuItem>
-          {supervisors.map((supervisor) => (
-            <MenuItem key={supervisor.id} value={supervisor.id}>
-              <div className="flex items-center justify-between gap-4 w-full">
-                <span>{supervisor.name}</span>
-                <span className="text-xs text-gray-500">
-                  ({supervisor.currentStudents}/{supervisor.maxStudents} students)
-                </span>
-              </div>
-            </MenuItem>
-          ))}
-        </Select>
-        <p className="text-xs text-gray-500 mt-1">
-          Choose a supervisor whose expertise aligns with your project
-        </p>
-      </FormControl>
-
-      <div className="space-y-2">
-        <p className="text-sm font-medium text-gray-700">Proposal Document (Optional)</p>
-        <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-gray-400 transition-colors">
-          <input
-            id="document"
-            type="file"
-            accept=".pdf,.doc,.docx"
-            onChange={handleFileChange}
-            className="hidden"
-          />
-          <label htmlFor="document" className="cursor-pointer">
-            {uploadedFile ? (
-              <div className="flex items-center justify-center gap-3 text-green-600">
-                <CheckCircle className="h-6 w-6" />
-                <div className="text-left">
-                  <p className="font-medium">{uploadedFile.name}</p>
-                  <p className="text-xs text-gray-500">
-                    {(uploadedFile.size / 1024 / 1024).toFixed(2)} MB
-                  </p>
-                </div>
-              </div>
-            ) : (
-              <div>
-                <Upload className="h-8 w-8 text-gray-400 mx-auto mb-2" />
-                <p className="text-sm text-gray-600 mb-1">
-                  Click to upload or drag and drop
-                </p>
-                <p className="text-xs text-gray-500">PDF or Word document (max 10MB)</p>
-              </div>
-            )}
-          </label>
-        </div>
+  if (loadingSupervisors) {
+    return (
+      <div className="flex items-center justify-center py-8">
+        <CircularProgress />
       </div>
+    );
+  }
 
-      <Alert severity="info" icon={<FileText className="h-4 w-4" />}>
-        Your proposal will be reviewed by {formData.supervisorId ? 'your selected supervisor' : 'an administrator who will assign a suitable supervisor'}. You&apos;ll receive feedback within 5-7 business days.
-      </Alert>
+  return (
+    <Box component="form" onSubmit={handleSubmit} className="space-y-4">
+      <TextField
+        fullWidth
+        label="Project Title"
+        value={title}
+        onChange={(e) => setTitle(e.target.value)}
+        required
+        sx={fieldSx}
+      />
 
-      <div className="flex gap-3 pt-4">
-        <Button type="submit" variant="contained" disabled={isSubmitting} fullWidth>
-          {isSubmitting ? 'Submitting...' : 'Submit Proposal'}
+      <TextField
+        fullWidth
+        label="Project Description"
+        value={description}
+        onChange={(e) => setDescription(e.target.value)}
+        required
+        multiline
+        minRows={6}
+        sx={fieldSx}
+      />
+
+      <TextField
+        select
+        fullWidth
+        label="Preferred Supervisor"
+        value={supervisorId}
+        onChange={(e) => setSupervisorId(e.target.value)}
+        required
+        sx={fieldSx}
+      >
+        <MenuItem value="any">Any Supervisor</MenuItem>
+
+        {supervisors.map((supervisor) => (
+          <MenuItem key={supervisor.id} value={supervisor.id}>
+            {supervisor.name}
+            {supervisor.expertise ? ` — ${supervisor.expertise}` : ''}
+          </MenuItem>
+        ))}
+      </TextField>
+
+      <div className="flex gap-3 pt-2">
+        <Button
+          type="submit"
+          variant="contained"
+          disabled={submitting}
+          sx={{
+            borderRadius: '14px',
+            px: 3,
+            py: 1.3,
+            fontSize: '0.98rem',
+            fontWeight: 600,
+            textTransform: 'none',
+          }}
+        >
+          {submitting ? 'Submitting...' : 'Submit Proposal'}
         </Button>
+
         {onCancel && (
-          <Button type="button" variant="outlined" onClick={onCancel}>
+          <Button
+            variant="outlined"
+            onClick={onCancel}
+            disabled={submitting}
+            sx={{
+              borderRadius: '14px',
+              px: 3,
+              py: 1.3,
+              fontSize: '0.98rem',
+              fontWeight: 600,
+              textTransform: 'none',
+            }}
+          >
             Cancel
           </Button>
         )}
       </div>
-    </form>
+    </Box>
   );
 }

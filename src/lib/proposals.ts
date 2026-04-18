@@ -1,0 +1,65 @@
+import { apiRequest } from './api';
+
+export async function fetchProposals(token: string) {
+  return apiRequest<{ proposals: any[] }>('/proposals', {
+    token,
+  });
+}
+
+export async function fetchSupervisors(token: string) {
+  return apiRequest<{ supervisors: any[] }>('/supervisors', {
+    token,
+  });
+}
+
+export async function createProposal(
+  token: string,
+  data: {
+    title: string;
+    description: string;
+    supervisorId?: number;
+  }
+) {
+  return apiRequest('/proposals', {
+    method: 'POST',
+    token,
+    body: data,
+  });
+}
+
+export async function reviewProposal(
+  token: string,
+  proposalId: string | number,
+  data: {
+    status: 'approved' | 'rejected';
+    feedback: string;
+  }
+) {
+  return apiRequest(`/proposals/${proposalId}/review`, {
+    method: 'PATCH',
+    token,
+    body: data,
+  });
+}
+
+export async function assignSupervisor(
+  token: string,
+  proposalId: string | number,
+  supervisorId: number
+) {
+  return apiRequest(`/proposals/${proposalId}/assign`, {
+    method: 'PATCH',
+    token,
+    body: { supervisorId },
+  });
+}
+
+export async function deleteProposal(
+  token: string,
+  proposalId: string | number
+) {
+  return apiRequest(`/proposals/${proposalId}`, {
+    method: 'DELETE',
+    token,
+  });
+}

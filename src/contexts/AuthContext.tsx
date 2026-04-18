@@ -1,13 +1,44 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { User, UserRole } from '@/lib/types';
-import { mockSupervisors, mockStudents, mockAdmin, TEST_CREDENTIALS } from '@/lib/mockData';
+import { apiRequest } from '@/lib/api';
 
 interface AuthContextType {
   user: User | null;
+  token: string | null;
   login: (email: string, password: string) => Promise<boolean>;
   logout: () => void;
   signup: (email: string, password: string, name: string, role: UserRole) => Promise<boolean>;
   isLoading: boolean;
+}
+
+interface LoginResponse {
+  message: string;
+  token: string;
+  user: {
+    id: number;
+    email: string;
+    name: string;
+    role: UserRole;
+    department?: string;
+    studentId?: string;
+    expertise?: string | string[];
+    maxStudents?: number;
+    currentStudents?: number;
+  };
+}
+
+interface MeResponse {
+  user: {
+    id: number;
+    email: string;
+    name: string;
+    role: UserRole;
+    department?: string;
+    studentId?: string;
+    expertise?: string | string[];
+    maxStudents?: number;
+    currentStudents?: number;
+  };
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -24,86 +55,139 @@ interface AuthProviderProps {
   children: ReactNode;
 }
 
+function normalizeUser(user: LoginResponse['user'] | MeResponse['user']): User {
+  return {
+    id: String(user.id),
+    email: user.email,
+    name: user.name,
+    role: user.role,
+    department: user.department,
+    ...(user.role === 'student' && user.studentId
+      ? { studentId: user.studentId }
+      : {}),
+    ...(user.role === 'supervisor'
+      ? {
+          maxStudents: user.maxStudents ?? 0,
+          currentStudents: user.currentStudents ?? 0,
+          expertise: Array.isArray(user.expertise)
+            ? user.expertise
+            : user.expertise
+              ? user.expertise.split(',').map((item) => item.trim())
+              : [],
+        }
+      : {}),
+  } as User;
+}
+
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
+  const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    // Check if user is already logged in
-    const storedUser = localStorage.getItem('currentUser');
-    if (storedUser) {
-      setUser(JSON.parse(storedUser));
-    }
-    setIsLoading(false);
+    const initializeAuth = async () => {
+      const storedToken = localStorage.getItem('token');
+
+      if (!storedToken) {
+        setIsLoading(false);
+        return;
+      }
+
+      try {
+        const data = await apiRequest<MeResponse>('/auth/me', {
+          token: storedToken,
+        });
+
+        setToken(storedToken);
+        setUser(normalizeUser(data.user));
+      } catch {
+        localStorage.removeItem('token');
+        localStorage.removeItem('currentUser');
+        setUser(null);
+        setToken(null);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    initializeAuth();
   }, []);
 
   const login = async (email: string, password: string): Promise<boolean> => {
-    // Simulate API call delay
-    await new Promise(resolve => setTimeout(resolve, 500));
+    try {
+      const data = await apiRequest<LoginResponse>('/auth/login', {
+        method: 'POST',
+        body: { email, password },
+      });
 
-    // Check against test credentials
-    let authenticatedUser: User | null = null;
+      const normalizedUser = normalizeUser(data.user);
 
-    if (email === TEST_CREDENTIALS.student.email && password === TEST_CREDENTIALS.student.password) {
-      authenticatedUser = mockStudents.find(s => s.email === email) || null;
-    } else if (email === TEST_CREDENTIALS.supervisor.email && password === TEST_CREDENTIALS.supervisor.password) {
-      authenticatedUser = mockSupervisors.find(s => s.email === email) || null;
-    } else if (email === TEST_CREDENTIALS.admin.email && password === TEST_CREDENTIALS.admin.password) {
-      authenticatedUser = mockAdmin;
-    }
+      setToken(data.token);
+      setUser(normalizedUser);
+      localStorage.setItem('token', data.token);
+      localStorage.setItem('currentUser', JSON.stringify(normalizedUser));
 
-    // Also check all mock users
-    if (!authenticatedUser) {
-      const allUsers = [...mockStudents, ...mockSupervisors, mockAdmin];
-      authenticatedUser = allUsers.find(u => u.email === email) || null;
-    }
-
-    if (authenticatedUser) {
-      setUser(authenticatedUser);
-      localStorage.setItem('currentUser', JSON.stringify(authenticatedUser));
       return true;
-    }
-
-    return false;
-  };
-
-  const signup = async (email: string, password: string, name: string, role: UserRole): Promise<boolean> => {
-    // Simulate API call delay
-    await new Promise(resolve => setTimeout(resolve, 500));
-
-    // Check if user already exists
-    const allUsers = [...mockStudents, ...mockSupervisors, mockAdmin];
-    if (allUsers.find(u => u.email === email)) {
+    } catch {
       return false;
     }
+  };
 
-    // Create new user
-    const newUser: User = {
-      id: `${role}-${Date.now()}`,
-      email,
-      name,
-      role,
-      department: role === 'student' ? 'Computer Science' : 'Computer Science',
-    };
+  const signup = async (
+    email: string,
+    password: string,
+    name: string,
+    role: UserRole
+  ): Promise<boolean> => {
+    try {
+      const registerBody =
+        role === 'student'
+          ? {
+              email,
+              password,
+              name,
+              role,
+              department: 'Computer Science',
+              studentId: `w${Date.now().toString().slice(-7)}`,
+            }
+          : role === 'supervisor'
+            ? {
+                email,
+                password,
+                name,
+                role,
+                department: 'Computer Science',
+                expertise: 'Software Engineering',
+                maxStudents: 5,
+              }
+            : {
+                email,
+                password,
+                name,
+                role,
+                department: 'Administration',
+              };
 
-    setUser(newUser);
-    localStorage.setItem('currentUser', JSON.stringify(newUser));
+      await apiRequest('/auth/register', {
+        method: 'POST',
+        body: registerBody,
+      });
 
-    // Store user in localStorage for future logins
-    const storedUsers = JSON.parse(localStorage.getItem('registeredUsers') || '[]');
-    storedUsers.push({ ...newUser, password });
-    localStorage.setItem('registeredUsers', JSON.stringify(storedUsers));
-
-    return true;
+      return await login(email, password);
+    } catch {
+      return false;
+    }
   };
 
   const logout = () => {
     setUser(null);
+    setToken(null);
+    localStorage.removeItem('token');
     localStorage.removeItem('currentUser');
   };
 
   return (
-    <AuthContext.Provider value={{ user, login, logout, signup, isLoading }}>
+    <AuthContext.Provider value={{ user, token, login, logout, signup, isLoading }}>
       {children}
     </AuthContext.Provider>
   );

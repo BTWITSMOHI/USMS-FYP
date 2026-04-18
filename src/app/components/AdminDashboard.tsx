@@ -1,259 +1,435 @@
-import { useState } from 'react';
+'use client';
+
+import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { useData } from '@/contexts/DataContext';
+import {
+  assignSupervisor,
+  fetchProposals,
+  fetchSupervisors,
+} from '@/lib/proposals';
 import Button from '@mui/material/Button';
 import Card from '@mui/material/Card';
 import CardContent from '@mui/material/CardContent';
 import CardHeader from '@mui/material/CardHeader';
 import Chip from '@mui/material/Chip';
-import Select from '@mui/material/Select';
-import MenuItem from '@mui/material/MenuItem';
-import FormControl from '@mui/material/FormControl';
-import InputLabel from '@mui/material/InputLabel';
+import Tabs from '@mui/material/Tabs';
+import Tab from '@mui/material/Tab';
+import Box from '@mui/material/Box';
+import CircularProgress from '@mui/material/CircularProgress';
 import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';
 import DialogContent from '@mui/material/DialogContent';
 import DialogActions from '@mui/material/DialogActions';
-import DialogContentText from '@mui/material/DialogContentText';
+import TextField from '@mui/material/TextField';
+import MenuItem from '@mui/material/MenuItem';
 import LinearProgress from '@mui/material/LinearProgress';
-import { 
-  Shield, 
-  LogOut, 
-  Users, 
-  FileText, 
-  Clock, 
-  CheckCircle, 
+import { useSnackbar } from 'notistack';
+import {
+  GraduationCap,
+  LogOut,
+  FileText,
+  Clock,
+  CheckCircle,
   XCircle,
+  Users,
   TrendingUp,
+  BarChart3,
+  UserCheck,
   AlertCircle,
-  BarChart3
 } from 'lucide-react';
 import { Proposal } from '@/lib/types';
 import { format } from 'date-fns';
-import { useSnackbar } from 'notistack';
+
+interface SupervisorOption {
+  id: number;
+  name: string;
+  email: string;
+  department?: string;
+  expertise?: string;
+  maxStudents?: number;
+  currentStudents?: number;
+}
+
+function TabPanel({
+  children,
+  value,
+  index,
+}: {
+  children: React.ReactNode;
+  value: number;
+  index: number;
+}) {
+  return value === index ? <Box sx={{ pt: 3 }}>{children}</Box> : null;
+}
+
+interface StatCardProps {
+  title: string;
+  value: string | number;
+  subtitle: string;
+  icon: React.ReactNode;
+  cardClassName?: string;
+  valueClassName?: string;
+}
+
+function StatCard({
+  title,
+  value,
+  subtitle,
+  icon,
+  cardClassName = '',
+  valueClassName = 'text-gray-900',
+}: StatCardProps) {
+  return (
+    <Card className={cardClassName}>
+      <CardContent className="p-5">
+        <div className="flex items-start justify-between mb-4">
+          <div>
+            <p className="text-sm font-medium text-gray-700">{title}</p>
+          </div>
+          <div className="text-gray-500">{icon}</div>
+        </div>
+
+        <div className={`text-4xl font-bold mb-2 ${valueClassName}`}>{value}</div>
+        <p className="text-sm text-gray-600">{subtitle}</p>
+      </CardContent>
+    </Card>
+  );
+}
 
 export function AdminDashboard() {
-  const { user, logout } = useAuth();
-  const { proposals, supervisors, updateProposal } = useData();
+  const { user, token, logout } = useAuth();
   const { enqueueSnackbar } = useSnackbar();
+
+  const [activeTab, setActiveTab] = useState(0);
+  const [proposals, setProposals] = useState<Proposal[]>([]);
+  const [supervisors, setSupervisors] = useState<SupervisorOption[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const [assignOpen, setAssignOpen] = useState(false);
   const [selectedProposal, setSelectedProposal] = useState<Proposal | null>(null);
-  const [assignDialog, setAssignDialog] = useState(false);
   const [selectedSupervisorId, setSelectedSupervisorId] = useState('');
+  const [assigning, setAssigning] = useState(false);
 
-  const pendingProposals = proposals.filter(p => p.status === 'pending');
-  const approvedProposals = proposals.filter(p => p.status === 'approved');
-  const rejectedProposals = proposals.filter(p => p.status === 'rejected');
-  const unassignedProposals = proposals.filter(p => !p.supervisorId);
+  const loadData = async () => {
+    if (!token) {
+      setLoading(false);
+      return;
+    }
 
-  const handleAssignSupervisor = () => {
-    if (!selectedProposal || !selectedSupervisorId) return;
+    try {
+      const [proposalData, supervisorData] = await Promise.all([
+        fetchProposals(token),
+        fetchSupervisors(token),
+      ]);
 
-    const supervisor = supervisors.find(s => s.id === selectedSupervisorId);
-    if (!supervisor) return;
+      setProposals(proposalData.proposals);
+      setSupervisors(supervisorData.supervisors);
+    } catch (error) {
+      console.error('Failed to load admin data', error);
+      enqueueSnackbar('Failed to load admin data', { variant: 'error' });
+      setProposals([]);
+      setSupervisors([]);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-    updateProposal(selectedProposal.id, {
-      supervisorId: selectedSupervisorId,
-      supervisorName: supervisor.name,
-    });
+  useEffect(() => {
+    loadData();
+  }, [token]);
 
-    enqueueSnackbar(`Assigned ${supervisor.name} to "${selectedProposal.title}"`, { variant: 'success' });
-    setAssignDialog(false);
-    setSelectedProposal(null);
+  const unassignedProposals = useMemo(
+    () => proposals.filter((p) => !p.supervisorId),
+    [proposals]
+  );
+
+  const assignedProposals = useMemo(
+    () => proposals.filter((p) => !!p.supervisorId),
+    [proposals]
+  );
+
+  const approvedProposals = useMemo(
+    () => proposals.filter((p) => p.status === 'approved'),
+    [proposals]
+  );
+
+  const rejectedProposals = useMemo(
+    () => proposals.filter((p) => p.status === 'rejected'),
+    [proposals]
+  );
+
+  const awaitingSupervisorReview = useMemo(
+    () => proposals.filter((p) => p.status === 'pending' && !!p.supervisorId),
+    [proposals]
+  );
+
+  const awaitingAdminAssignment = useMemo(
+    () => proposals.filter((p) => p.status === 'pending' && !p.supervisorId),
+    [proposals]
+  );
+
+  const approvalRate = proposals.length
+    ? Math.round((approvedProposals.length / proposals.length) * 100)
+    : 0;
+
+  const averageLoad = supervisors.length
+    ? (
+        supervisors.reduce(
+          (sum, supervisor) => sum + (supervisor.currentStudents || 0),
+          0
+        ) / supervisors.length
+      ).toFixed(1)
+    : '0';
+
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case 'pending':
+        return <Clock className="h-4 w-4" />;
+      case 'approved':
+        return <CheckCircle className="h-4 w-4" />;
+      case 'rejected':
+        return <XCircle className="h-4 w-4" />;
+      default:
+        return null;
+    }
+  };
+
+  const getStatusColor = (
+    status: string
+  ): 'warning' | 'success' | 'error' | 'default' => {
+    switch (status) {
+      case 'pending':
+        return 'warning';
+      case 'approved':
+        return 'success';
+      case 'rejected':
+        return 'error';
+      default:
+        return 'default';
+    }
+  };
+
+  const getStatusLabel = (proposal: Proposal) => {
+    if (proposal.status === 'approved') return 'Approved';
+    if (proposal.status === 'rejected') return 'Rejected';
+
+    if (proposal.status === 'pending' && !proposal.supervisorId) {
+      return 'Awaiting admin assignment';
+    }
+
+    if (proposal.status === 'pending' && proposal.supervisorId) {
+      return 'Awaiting supervisor review';
+    }
+
+    return proposal.status;
+  };
+
+  const openAssignDialog = (proposal: Proposal) => {
+    setSelectedProposal(proposal);
     setSelectedSupervisorId('');
+    setAssignOpen(true);
   };
 
-  const handleStatusChange = (proposalId: string, newStatus: 'pending' | 'approved' | 'rejected') => {
-    updateProposal(proposalId, {
-      status: newStatus,
-      reviewedAt: new Date().toISOString(),
-    });
-    enqueueSnackbar('Proposal status updated', { variant: 'success' });
+  const handleAssignSupervisor = async () => {
+    if (!token || !selectedProposal || !selectedSupervisorId) {
+      enqueueSnackbar('Missing token, proposal, or supervisor selection', {
+        variant: 'error',
+      });
+      return;
+    }
+
+    try {
+      setAssigning(true);
+
+      await assignSupervisor(
+        token,
+        selectedProposal.id,
+        Number(selectedSupervisorId)
+      );
+
+      enqueueSnackbar('Supervisor assigned successfully', {
+        variant: 'success',
+      });
+
+      setAssignOpen(false);
+      setSelectedProposal(null);
+      setSelectedSupervisorId('');
+      await loadData();
+    } catch (error: any) {
+      console.error('Assign supervisor error:', error);
+      enqueueSnackbar(error.message || 'Failed to assign supervisor', {
+        variant: 'error',
+      });
+    } finally {
+      setAssigning(false);
+    }
   };
 
-  const getSupervisorWorkload = (supervisorId: string) => {
-    return proposals.filter(p => p.supervisorId === supervisorId && p.status === 'approved').length;
-  };
-
-  const getWorkloadPercentage = (supervisorId: string) => {
-    const supervisor = supervisors.find(s => s.id === supervisorId);
-    if (!supervisor) return 0;
-    const workload = getSupervisorWorkload(supervisorId);
-    return (workload / supervisor.maxStudents) * 100;
-  };
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <CircularProgress />
+      </div>
+    );
+  }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
+    <div className="min-h-screen bg-gray-100">
       <header className="bg-white border-b border-gray-200 sticky top-0 z-10">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <Shield className="h-8 w-8 text-green-600" />
+              <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-green-50">
+                <GraduationCap className="h-7 w-7 text-green-600" />
+              </div>
               <div>
                 <h1 className="text-2xl font-bold text-gray-900">Admin Portal</h1>
                 <p className="text-sm text-gray-600">System Administration</p>
               </div>
             </div>
-            <Button variant="outlined" onClick={logout} startIcon={<LogOut className="h-4 w-4" />}>
+
+            <Button
+              variant="outlined"
+              onClick={logout}
+              startIcon={<LogOut className="h-4 w-4" />}
+            >
               Logout
             </Button>
           </div>
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Overview Stats */}
-        <div className="grid md:grid-cols-4 gap-6 mb-8">
-          <Card>
-            <CardHeader
-              title={
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium text-gray-600">Total Proposals</span>
-                  <FileText className="h-4 w-4 text-gray-400" />
-                </div>
-              }
-              sx={{ pb: 0 }}
-            />
-            <CardContent>
-              <div className="text-3xl font-bold text-gray-900">{proposals.length}</div>
-              <p className="text-xs text-gray-500 mt-1">All submissions</p>
-            </CardContent>
-          </Card>
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+        <div className="grid md:grid-cols-2 xl:grid-cols-4 gap-6">
+          <StatCard
+            title="Total Proposals"
+            value={proposals.length}
+            subtitle="All submissions"
+            icon={<FileText className="h-5 w-5" />}
+          />
 
-          <Card sx={{ bgcolor: '#fef9c3', border: '1px solid #fde047' }}>
-            <CardHeader
-              title={
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium text-gray-600">Pending</span>
-                  <Clock className="h-4 w-4 text-yellow-600" />
-                </div>
-              }
-              sx={{ pb: 0 }}
-            />
-            <CardContent>
-              <div className="text-3xl font-bold text-yellow-600">{pendingProposals.length}</div>
-              <p className="text-xs text-gray-500 mt-1">Awaiting review</p>
-            </CardContent>
-          </Card>
+          <StatCard
+            title="Pending"
+            value={awaitingSupervisorReview.length}
+            subtitle="Awaiting review"
+            icon={<Clock className="h-5 w-5 text-amber-600" />}
+            cardClassName="border border-amber-300 bg-amber-50"
+            valueClassName="text-amber-700"
+          />
 
-          <Card sx={{ bgcolor: '#dcfce7', border: '1px solid #86efac' }}>
-            <CardHeader
-              title={
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium text-gray-600">Approved</span>
-                  <CheckCircle className="h-4 w-4 text-green-600" />
-                </div>
-              }
-              sx={{ pb: 0 }}
-            />
-            <CardContent>
-              <div className="text-3xl font-bold text-green-600">{approvedProposals.length}</div>
-              <p className="text-xs text-gray-500 mt-1">Active projects</p>
-            </CardContent>
-          </Card>
+          <StatCard
+            title="Approved"
+            value={approvedProposals.length}
+            subtitle="Active projects"
+            icon={<CheckCircle className="h-5 w-5 text-green-600" />}
+            cardClassName="border border-green-300 bg-green-50"
+            valueClassName="text-green-700"
+          />
 
-          <Card sx={{ bgcolor: '#fee2e2', border: '1px solid #fca5a5' }}>
-            <CardHeader
-              title={
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium text-gray-600">Unassigned</span>
-                  <AlertCircle className="h-4 w-4 text-red-600" />
-                </div>
-              }
-              sx={{ pb: 0 }}
-            />
-            <CardContent>
-              <div className="text-3xl font-bold text-red-600">{unassignedProposals.length}</div>
-              <p className="text-xs text-gray-500 mt-1">Need supervisor</p>
-            </CardContent>
-          </Card>
+          <StatCard
+            title="Unassigned"
+            value={awaitingAdminAssignment.length}
+            subtitle="Need supervisor"
+            icon={<AlertCircle className="h-5 w-5 text-red-500" />}
+            cardClassName="border border-red-300 bg-red-50"
+            valueClassName="text-red-600"
+          />
         </div>
 
-        <div className="grid lg:grid-cols-2 gap-6 mb-8">
-          {/* Supervisor Workload */}
+        <div className="grid lg:grid-cols-2 gap-6">
           <Card>
             <CardHeader
               title={
-                <span className="flex items-center gap-2">
-                  <BarChart3 className="h-5 w-5" />
-                  Supervisor Workload
-                </span>
+                <div className="flex items-center gap-2">
+                  <BarChart3 className="h-5 w-5 text-gray-700" />
+                  <span className="text-2xl font-semibold">Supervisor Workload</span>
+                </div>
               }
               subheader="Current student allocation per supervisor"
             />
             <CardContent>
-              <div className="space-y-6">
-                {supervisors.map((supervisor) => {
-                  const workload = getSupervisorWorkload(supervisor.id);
-                  const percentage = getWorkloadPercentage(supervisor.id);
-                  const isOverloaded = workload >= supervisor.maxStudents;
-                  const isNearCapacity = workload >= supervisor.maxStudents * 0.8;
+              {supervisors.length === 0 ? (
+                <p className="text-gray-600">No supervisors found.</p>
+              ) : (
+                <div className="space-y-6">
+                  {supervisors.map((supervisor) => {
+                    const current = supervisor.currentStudents || 0;
+                    const max = supervisor.maxStudents || 0;
+                    const percent = max > 0 ? Math.min((current / max) * 100, 100) : 0;
+                    const isFull = max > 0 && current >= max;
 
-                  return (
-                    <div key={supervisor.id} className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="font-medium text-gray-900">{supervisor.name}</p>
-                          <p className="text-xs text-gray-500">
-                            {supervisor.expertise.join(', ')}
-                          </p>
+                    return (
+                      <div key={supervisor.id}>
+                        <div className="flex items-start justify-between gap-4 mb-2">
+                          <div>
+                            <h3 className="font-semibold text-gray-900 text-lg">
+                              {supervisor.name}
+                            </h3>
+                            <p className="text-sm text-gray-500">
+                              {supervisor.expertise || 'No expertise listed'}
+                            </p>
+                          </div>
+
+                          <span
+                            className={`text-sm font-medium px-3 py-1 rounded-full border ${
+                              isFull
+                                ? 'bg-red-50 text-red-600 border-red-200'
+                                : 'bg-green-50 text-green-600 border-green-200'
+                            }`}
+                          >
+                            {current}/{max || '-'}
+                          </span>
                         </div>
-                        <Chip
-                          label={`${workload} / ${supervisor.maxStudents}`}
-                          size="small"
-                          color={isOverloaded ? 'error' : isNearCapacity ? 'warning' : 'success'}
-                          variant="outlined"
+
+                        <LinearProgress
+                          variant="determinate"
+                          value={percent}
+                          sx={{
+                            height: 8,
+                            borderRadius: 999,
+                            backgroundColor: '#e5e7eb',
+                          }}
                         />
                       </div>
-                      <LinearProgress
-                        variant="determinate"
-                        value={Math.min(percentage, 100)}
-                        color={isOverloaded ? 'error' : isNearCapacity ? 'warning' : 'success'}
-                      />
-                    </div>
-                  );
-                })}
-              </div>
+                    );
+                  })}
+                </div>
+              )}
             </CardContent>
           </Card>
 
-          {/* Quick Actions */}
           <Card>
             <CardHeader
               title={
-                <span className="flex items-center gap-2">
-                  <TrendingUp className="h-5 w-5" />
-                  System Overview
-                </span>
+                <div className="flex items-center gap-2">
+                  <TrendingUp className="h-5 w-5 text-gray-700" />
+                  <span className="text-2xl font-semibold">System Overview</span>
+                </div>
               }
               subheader="Key metrics and insights"
             />
             <CardContent>
               <div className="space-y-4">
-                <div className="flex items-center justify-between p-4 bg-blue-50 rounded-lg">
+                <div className="rounded-2xl bg-blue-50 p-5 flex items-center justify-between">
                   <div>
                     <p className="text-sm text-gray-600">Total Supervisors</p>
-                    <p className="text-2xl font-bold text-blue-600">{supervisors.length}</p>
+                    <p className="text-4xl font-bold text-blue-600">{supervisors.length}</p>
                   </div>
-                  <Users className="h-8 w-8 text-blue-400" />
+                  <UserCheck className="h-8 w-8 text-blue-400" />
                 </div>
 
-                <div className="flex items-center justify-between p-4 bg-purple-50 rounded-lg">
+                <div className="rounded-2xl bg-purple-50 p-5 flex items-center justify-between">
                   <div>
-                    <p className="text-sm text-gray-600">Average Response Time</p>
-                    <p className="text-2xl font-bold text-purple-600">2.3 days</p>
+                    <p className="text-sm text-gray-600">Average Workload</p>
+                    <p className="text-4xl font-bold text-purple-600">{averageLoad}</p>
                   </div>
-                  <Clock className="h-8 w-8 text-purple-400" />
+                  <Users className="h-8 w-8 text-purple-400" />
                 </div>
 
-                <div className="flex items-center justify-between p-4 bg-green-50 rounded-lg">
+                <div className="rounded-2xl bg-green-50 p-5 flex items-center justify-between">
                   <div>
                     <p className="text-sm text-gray-600">Approval Rate</p>
-                    <p className="text-2xl font-bold text-green-600">
-                      {proposals.length > 0
-                        ? Math.round((approvedProposals.length / proposals.length) * 100)
-                        : 0}%
-                    </p>
+                    <p className="text-4xl font-bold text-green-600">{approvalRate}%</p>
                   </div>
                   <TrendingUp className="h-8 w-8 text-green-400" />
                 </div>
@@ -262,159 +438,233 @@ export function AdminDashboard() {
           </Card>
         </div>
 
-        {/* All Proposals Table */}
         <Card>
-          <CardHeader
-            title="All Proposals"
-            subheader="Manage and monitor all student proposals"
-          />
-          <CardContent>
-            <div className="space-y-4">
-              {proposals.length === 0 ? (
-                <div className="text-center py-12 text-gray-500">
-                  <FileText className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                  <p>No proposals submitted yet</p>
+          <CardContent className="pt-6">
+            <Tabs
+              value={activeTab}
+              onChange={(_, newValue) => setActiveTab(newValue)}
+              sx={{ mb: 1 }}
+            >
+              <Tab
+                label={
+                  <span className="flex items-center gap-2">
+                    <FileText className="h-4 w-4" />
+                    All Proposals
+                  </span>
+                }
+              />
+              <Tab
+                label={
+                  <span className="flex items-center gap-2">
+                    <Users className="h-4 w-4" />
+                    Unassigned
+                  </span>
+                }
+              />
+            </Tabs>
+
+            <TabPanel value={activeTab} index={0}>
+              <div className="space-y-4">
+                <div className="mb-3">
+                  <h2 className="text-2xl font-semibold text-gray-900">All Proposals</h2>
+                  <p className="text-gray-600">
+                    Manage and monitor all student proposals
+                  </p>
                 </div>
-              ) : (
-                proposals.map((proposal) => (
-                  <div
-                    key={proposal.id}
-                    className="border rounded-lg p-4 hover:bg-gray-50 transition-colors"
-                  >
-                    <div className="flex items-start justify-between mb-3">
-                      <div className="flex-1">
-                        <h3 className="font-semibold text-gray-900 mb-1">{proposal.title}</h3>
-                        <p className="text-sm text-gray-600 mb-2">
-                          Student: {proposal.studentName}
-                        </p>
-                        <p className="text-sm text-gray-700 line-clamp-2">
-                          {proposal.description}
-                        </p>
-                      </div>
-                      <Chip
-                        label={proposal.status.charAt(0).toUpperCase() + proposal.status.slice(1)}
-                        size="small"
-                        color={
-                          proposal.status === 'pending'
-                            ? 'warning'
-                            : proposal.status === 'approved'
-                            ? 'success'
-                            : 'error'
-                        }
-                        variant="outlined"
-                      />
-                    </div>
 
-                    <div className="flex items-center gap-4 text-sm text-gray-500 mb-3">
-                      <span>Submitted: {format(new Date(proposal.submittedAt), 'MMM d, yyyy')}</span>
-                      {proposal.supervisorName ? (
-                        <span className="text-purple-600">
-                          Supervisor: {proposal.supervisorName}
-                        </span>
-                      ) : (
-                        <span className="text-red-600 flex items-center gap-1">
-                          <AlertCircle className="h-3 w-3" />
-                          Unassigned
-                        </span>
-                      )}
-                    </div>
+                {proposals.length === 0 ? (
+                  <div className="py-12 text-center text-gray-600">
+                    No proposals found
+                  </div>
+                ) : (
+                  proposals.map((proposal) => (
+                    <div
+                      key={proposal.id}
+                      className="border border-gray-200 rounded-xl p-5 bg-white hover:bg-gray-50 transition-colors"
+                    >
+                      <div className="flex items-start justify-between gap-4 mb-3">
+                        <div className="flex-1">
+                          <h3 className="font-semibold text-gray-900 text-lg mb-1">
+                            {proposal.title}
+                          </h3>
+                          <p className="text-sm text-gray-600 mb-1">
+                            Student: {proposal.studentName}
+                          </p>
+                          <p className="text-sm text-gray-600 mb-1">
+                            Supervisor:{' '}
+                            {proposal.supervisorName || 'Any Supervisor / Unassigned'}
+                          </p>
+                          <p className="text-sm text-gray-600 line-clamp-3">
+                            {proposal.description}
+                          </p>
+                        </div>
 
-                    <div className="flex gap-2 items-center">
-                      {!proposal.supervisorId && (
-                        <Button
+                        <Chip
+                          icon={getStatusIcon(proposal.status) || undefined}
+                          label={getStatusLabel(proposal)}
+                          color={getStatusColor(proposal.status)}
                           size="small"
                           variant="outlined"
-                          startIcon={<Users className="h-3 w-3" />}
-                          onClick={() => {
-                            setSelectedProposal(proposal);
-                            setAssignDialog(true);
-                          }}
+                        />
+                      </div>
+
+                      <div className="flex items-center gap-4 text-sm text-gray-500 mb-3">
+                        <span>
+                          Submitted: {format(new Date(proposal.submittedAt), 'MMM d, yyyy')}
+                        </span>
+                      </div>
+
+                      {proposal.feedback && (
+                        <div
+                          className={`p-3 rounded-lg mb-3 ${
+                            proposal.status === 'approved'
+                              ? 'bg-green-50 border border-green-200'
+                              : 'bg-red-50 border border-red-200'
+                          }`}
                         >
-                          Assign Supervisor
-                        </Button>
+                          <p className="text-sm font-medium text-gray-900 mb-1">
+                            Feedback:
+                          </p>
+                          <p className="text-sm text-gray-700">{proposal.feedback}</p>
+                        </div>
                       )}
 
-                      <FormControl size="small" sx={{ minWidth: 150 }}>
-                        <InputLabel>Status</InputLabel>
-                        <Select
-                          value={proposal.status}
-                          label="Status"
-                          onChange={(e) =>
-                            handleStatusChange(proposal.id, e.target.value as 'pending' | 'approved' | 'rejected')
-                          }
-                        >
-                          <MenuItem value="pending">Pending</MenuItem>
-                          <MenuItem value="approved">Approved</MenuItem>
-                          <MenuItem value="rejected">Rejected</MenuItem>
-                        </Select>
-                      </FormControl>
+                      {!proposal.supervisorId && (
+                        <div className="mt-3">
+                          <Button
+                            variant="contained"
+                            onClick={() => openAssignDialog(proposal)}
+                          >
+                            Assign Supervisor
+                          </Button>
+                        </div>
+                      )}
                     </div>
+                  ))
+                )}
+              </div>
+            </TabPanel>
+
+            <TabPanel value={activeTab} index={1}>
+              <div className="space-y-4">
+                <div className="mb-3">
+                  <h2 className="text-2xl font-semibold text-gray-900">
+                    Unassigned Proposals
+                  </h2>
+                  <p className="text-gray-600">
+                    Assign supervisors to proposals submitted with Any Supervisor
+                  </p>
+                </div>
+
+                {unassignedProposals.length === 0 ? (
+                  <div className="py-12 text-center text-gray-600">
+                    No unassigned proposals
                   </div>
-                ))
-              )}
-            </div>
+                ) : (
+                  unassignedProposals.map((proposal) => (
+                    <div
+                      key={proposal.id}
+                      className="border border-gray-200 rounded-xl p-5 bg-white hover:bg-gray-50 transition-colors"
+                    >
+                      <div className="flex items-start justify-between gap-4 mb-3">
+                        <div className="flex-1">
+                          <h3 className="font-semibold text-gray-900 text-lg mb-1">
+                            {proposal.title}
+                          </h3>
+                          <p className="text-sm text-gray-600 mb-1">
+                            Student: {proposal.studentName}
+                          </p>
+                          <p className="text-sm text-gray-600 line-clamp-3">
+                            {proposal.description}
+                          </p>
+                        </div>
+
+                        <Chip
+                          icon={getStatusIcon(proposal.status) || undefined}
+                          label={getStatusLabel(proposal)}
+                          color={getStatusColor(proposal.status)}
+                          size="small"
+                          variant="outlined"
+                        />
+                      </div>
+
+                      <div className="flex items-center gap-4 text-sm text-gray-500 mb-3">
+                        <span>
+                          Submitted: {format(new Date(proposal.submittedAt), 'MMM d, yyyy')}
+                        </span>
+                      </div>
+
+                      <Button
+                        variant="contained"
+                        onClick={() => openAssignDialog(proposal)}
+                      >
+                        Assign Supervisor
+                      </Button>
+                    </div>
+                  ))
+                )}
+              </div>
+            </TabPanel>
           </CardContent>
         </Card>
       </main>
 
-      {/* Assign Supervisor Dialog */}
-      <Dialog open={assignDialog} onClose={() => setAssignDialog(false)} maxWidth="sm" fullWidth>
+      <Dialog
+        open={assignOpen}
+        onClose={() => !assigning && setAssignOpen(false)}
+        fullWidth
+        maxWidth="sm"
+      >
         <DialogTitle>Assign Supervisor</DialogTitle>
         <DialogContent>
-          <DialogContentText sx={{ mb: 2 }}>
-            Select a supervisor for: {selectedProposal?.title}
-          </DialogContentText>
-
-          <div className="p-4 bg-gray-50 rounded-lg mb-4">
-            <p className="text-sm font-medium text-gray-900 mb-1">Student</p>
-            <p className="text-sm text-gray-600">{selectedProposal?.studentName}</p>
-          </div>
-
-          <FormControl fullWidth>
-            <InputLabel>Select Supervisor</InputLabel>
-            <Select
-              value={selectedSupervisorId}
+          <div className="pt-2 space-y-3">
+            <TextField
+              select
+              fullWidth
               label="Select Supervisor"
+              value={selectedSupervisorId}
               onChange={(e) => setSelectedSupervisorId(e.target.value)}
             >
               {supervisors.map((supervisor) => {
-                const workload = getSupervisorWorkload(supervisor.id);
-                const isAtCapacity = workload >= supervisor.maxStudents;
+                const isFull =
+                  typeof supervisor.currentStudents === 'number' &&
+                  typeof supervisor.maxStudents === 'number' &&
+                  supervisor.currentStudents >= supervisor.maxStudents;
 
                 return (
                   <MenuItem
                     key={supervisor.id}
                     value={supervisor.id}
-                    disabled={isAtCapacity}
+                    disabled={isFull}
                   >
-                    <div className="flex items-center justify-between w-full gap-4">
-                      <div>
-                        <p className="font-medium">{supervisor.name}</p>
-                        <p className="text-xs text-gray-500">
-                          {supervisor.expertise.slice(0, 2).join(', ')}
-                        </p>
-                      </div>
-                      <Chip
-                        label={`${workload}/${supervisor.maxStudents}`}
-                        size="small"
-                        color={isAtCapacity ? 'error' : 'success'}
-                        variant="outlined"
-                      />
-                    </div>
+                    {supervisor.name}
+                    {supervisor.expertise ? ` — ${supervisor.expertise}` : ''}
+                    {typeof supervisor.currentStudents === 'number' &&
+                    typeof supervisor.maxStudents === 'number'
+                      ? ` (${supervisor.currentStudents}/${supervisor.maxStudents})`
+                      : ''}
+                    {isFull ? ' — Full' : ''}
                   </MenuItem>
                 );
               })}
-            </Select>
-          </FormControl>
+            </TextField>
+
+            <p className="text-sm text-gray-500">
+              Supervisors who have reached their maximum student capacity are marked as{' '}
+              <span className="font-medium text-red-600">Full</span> and cannot be assigned new proposals.
+            </p>
+          </div>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setAssignDialog(false)}>Cancel</Button>
-          <Button 
-            onClick={handleAssignSupervisor} 
-            disabled={!selectedSupervisorId}
+          <Button onClick={() => setAssignOpen(false)} disabled={assigning}>
+            Cancel
+          </Button>
+          <Button
+            onClick={handleAssignSupervisor}
             variant="contained"
+            disabled={assigning || !selectedSupervisorId}
           >
-            Assign Supervisor
+            {assigning ? 'Assigning...' : 'Assign'}
           </Button>
         </DialogActions>
       </Dialog>

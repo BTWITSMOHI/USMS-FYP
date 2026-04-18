@@ -28,26 +28,27 @@ export function LandingNav({ onGetStarted }: LandingNavProps) {
   return (
     <header
       className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
-        scrolled ? 'bg-white/80 backdrop-blur-lg border-b border-gray-200' : 'bg-transparent'
+        scrolled
+          ? 'bg-white/85 backdrop-blur-xl border-b border-gray-200 shadow-sm'
+          : 'bg-transparent'
       }`}
     >
-      <nav className="max-w-6xl mx-auto flex items-center justify-between px-6 h-16">
-        <div className="flex items-center gap-2">
-          <div className="flex items-center justify-center w-8 h-8 rounded-md bg-gray-900">
+      <nav className="max-w-6xl mx-auto flex items-center justify-between px-6 h-18">
+        <div className="flex items-center gap-3">
+          <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-gray-900 shadow-sm">
             <GraduationCap className="h-4 w-4 text-white" />
           </div>
-          <span className="text-sm font-medium text-gray-900 hidden sm:inline">
+          <span className="text-sm font-semibold text-gray-900 hidden sm:inline">
             UniSupervision
           </span>
         </div>
 
-        {/* Desktop nav */}
         <div className="hidden md:flex items-center gap-8">
           {navLinks.map((link) => (
             <a
               key={link.href}
               href={link.href}
-              className="text-sm text-gray-500 hover:text-gray-900 transition-colors"
+              className="text-sm font-medium text-gray-500 hover:text-gray-900 transition-colors"
             >
               {link.label}
             </a>
@@ -55,20 +56,34 @@ export function LandingNav({ onGetStarted }: LandingNavProps) {
         </div>
 
         <div className="hidden md:flex items-center gap-3">
-          <Button variant="text" size="small" onClick={onGetStarted}>
+          <Button
+            variant="text"
+            size="small"
+            onClick={onGetStarted}
+            sx={{
+              textTransform: 'none',
+              fontWeight: 600,
+            }}
+          >
             Log In
           </Button>
-          <Button 
-            variant="contained" 
-            size="small" 
-            sx={{ borderRadius: '9999px', px: 2.5 }}
+
+          <Button
+            variant="contained"
+            size="small"
+            sx={{
+              borderRadius: '9999px',
+              px: 2.5,
+              textTransform: 'none',
+              fontWeight: 600,
+              boxShadow: 'none',
+            }}
             onClick={onGetStarted}
           >
             Sign Up
           </Button>
         </div>
 
-        {/* Mobile menu button */}
         <IconButton
           className="md:hidden"
           onClick={() => setMobileOpen(!mobileOpen)}
@@ -79,34 +94,51 @@ export function LandingNav({ onGetStarted }: LandingNavProps) {
         </IconButton>
       </nav>
 
-      {/* Mobile menu */}
       {mobileOpen && (
-        <div className="md:hidden bg-white border-b border-gray-200 px-6 pb-4">
-          <div className="flex flex-col gap-3">
+        <div className="md:hidden bg-white/95 backdrop-blur-xl border-b border-gray-200 px-6 pb-5">
+          <div className="flex flex-col gap-3 pt-2">
             {navLinks.map((link) => (
               <a
                 key={link.href}
                 href={link.href}
-                className="text-sm text-gray-500 hover:text-gray-900 py-1"
+                className="text-sm font-medium text-gray-500 hover:text-gray-900 py-1"
                 onClick={() => setMobileOpen(false)}
               >
                 {link.label}
               </a>
             ))}
-            <div className="flex gap-2 pt-2">
+
+            <div className="flex gap-2 pt-3">
               <Button
                 variant="outlined"
                 size="small"
                 fullWidth
-                onClick={() => { setMobileOpen(false); onGetStarted(); }}
+                sx={{
+                  borderRadius: '9999px',
+                  textTransform: 'none',
+                  fontWeight: 600,
+                }}
+                onClick={() => {
+                  setMobileOpen(false);
+                  onGetStarted();
+                }}
               >
                 Log In
               </Button>
+
               <Button
                 variant="contained"
                 size="small"
                 fullWidth
-                onClick={() => { setMobileOpen(false); onGetStarted(); }}
+                sx={{
+                  borderRadius: '9999px',
+                  textTransform: 'none',
+                  fontWeight: 600,
+                }}
+                onClick={() => {
+                  setMobileOpen(false);
+                  onGetStarted();
+                }}
               >
                 Sign Up
               </Button>

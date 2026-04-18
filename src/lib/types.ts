@@ -6,8 +6,12 @@ export interface User {
   id: string;
   email: string;
   name: string;
-  role: UserRole;
+  role: 'student' | 'supervisor' | 'admin';
   department?: string;
+  studentId?: string;
+  expertise?: string[];
+  maxStudents?: number;
+  currentStudents?: number;
 }
 
 export interface Student extends User {
