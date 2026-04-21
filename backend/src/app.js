@@ -7,6 +7,7 @@ const pool = require('./db');
 const authRoutes = require('./routes/auth');
 const proposalRoutes = require('./routes/proposals');
 const messageRoutes = require('./routes/messages');
+const projectRoutes = require('./routes/projects');
 
 async function buildApp() {
   await fastify.register(cors, {
@@ -47,6 +48,7 @@ async function buildApp() {
   await fastify.register(proposalRoutes, { prefix: '/proposals' });
   await fastify.register(messageRoutes);
   await fastify.register(supervisorRoutes, { prefix: '/supervisors' });
+  await fastify.register(projectRoutes, { prefix: '/projects' });
   return fastify;
 }
 

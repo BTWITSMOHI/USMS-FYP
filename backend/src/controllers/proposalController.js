@@ -1,4 +1,5 @@
 const pool = require('../db');
+const { createProjectFromProposal } = require('./projectController');
 
 const createProposal = async (request, reply) => {
   try {
@@ -287,9 +288,21 @@ const reviewProposal = async (request, reply) => {
       [status, feedback || null, proposalId]
     );
 
+    // If approved, create a project from the proposal
+    let project = null;
+    if (status === 'approved') {
+      try {
+        project = await createProjectFromProposal(proposalId);
+      } catch (projectError) {
+        console.error('Error creating project:', projectError);
+        // Don't fail the review, project can be created manually if needed
+      }
+    }
+
     return reply.send({
       message: 'Proposal reviewed successfully',
       proposal: result.rows[0],
+      project,
     });
   } catch (error) {
     console.error('Review proposal error:', error);

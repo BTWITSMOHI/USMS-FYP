@@ -25,10 +25,13 @@ import {
   Upload,
   AlertCircle,
   TrendingUp,
+  FolderOpen,
 } from 'lucide-react';
 import { Proposal } from '@/lib/types';
 import { format } from 'date-fns';
 import { deleteProposal, fetchProposals } from '@/lib/proposals';
+import { Project, fetchProjects } from '@/lib/projects';
+import { ProjectView } from '@/app/components/ProjectView';
 
 function TabPanel({
   children,
@@ -82,20 +85,27 @@ export function StudentDashboard() {
   const [selectedProposal, setSelectedProposal] = useState<Proposal | null>(null);
   const [activeTab, setActiveTab] = useState(0);
   const [proposals, setProposals] = useState<Proposal[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const loadProposals = async () => {
+  const loadData = async () => {
     if (!token) {
       setLoading(false);
       return;
     }
 
     try {
-      const data = await fetchProposals(token);
-      setProposals(data.proposals);
+      const [proposalsData, projectsData] = await Promise.all([
+        fetchProposals(token),
+        fetchProjects(token),
+      ]);
+      setProposals(proposalsData.proposals);
+      setProjects(projectsData.projects);
     } catch (error) {
-      console.error('Failed to load proposals', error);
+      console.error('Failed to load data', error);
       setProposals([]);
+      setProjects([]);
     } finally {
       setLoading(false);
     }
@@ -113,7 +123,7 @@ export function StudentDashboard() {
     try {
       await deleteProposal(token, proposalId);
       enqueueSnackbar('Proposal deleted successfully', { variant: 'success' });
-      await loadProposals();
+      await loadData();
     } catch (error: any) {
       console.error('Delete proposal error:', error);
       enqueueSnackbar(error.message || 'Failed to delete proposal', {
@@ -123,7 +133,7 @@ export function StudentDashboard() {
   };
 
   useEffect(() => {
-    loadProposals();
+    loadData();
   }, [token]);
 
   const activeProposal = proposals.find((p) => p.status === 'approved');
@@ -233,6 +243,14 @@ export function StudentDashboard() {
               </span>
             }
           />
+          <Tab
+            label={
+              <span className="flex items-center gap-2">
+                <FolderOpen className="h-4 w-4" />
+                My Projects ({projects.length})
+              </span>
+            }
+          />
           {activeProposal && (
             <Tab
               label={
@@ -316,7 +334,7 @@ export function StudentDashboard() {
                     onSuccess={async () => {
                       setShowProposalForm(false);
                       setActiveTab(0);
-                      await loadProposals();
+                      await loadData();
                     }}
                     onCancel={() => setShowProposalForm(false)}
                   />
@@ -402,17 +420,35 @@ export function StudentDashboard() {
 
                         <div className="mt-3 flex gap-3 flex-wrap">
                           {proposal.status === 'approved' && (
-                            <Button
-                              variant="outlined"
-                              size="small"
-                              startIcon={<MessageSquare className="h-4 w-4" />}
-                              onClick={() => {
-                                setSelectedProposal(proposal);
-                                setActiveTab(1);
-                              }}
-                            >
-                              Chat with Supervisor
-                            </Button>
+                            <>
+                              <Button
+                                variant="contained"
+                                size="small"
+                                startIcon={<FolderOpen className="h-4 w-4" />}
+                                onClick={() => {
+                                  const project = projects.find(
+                                    (p) => p.proposalId === Number(proposal.id)
+                                  );
+                                  if (project) {
+                                    setSelectedProjectId(project.id);
+                                    setActiveTab(1);
+                                  }
+                                }}
+                              >
+                                View Project
+                              </Button>
+                              <Button
+                                variant="outlined"
+                                size="small"
+                                startIcon={<MessageSquare className="h-4 w-4" />}
+                                onClick={() => {
+                                  setSelectedProposal(proposal);
+                                  setActiveTab(2);
+                                }}
+                              >
+                                Chat with Supervisor
+                              </Button>
+                            </>
                           )}
 
                           {proposal.status !== 'approved' && (
@@ -436,6 +472,81 @@ export function StudentDashboard() {
         </TabPanel>
 
         <TabPanel value={activeTab} index={1}>
+          {selectedProjectId ? (
+            <ProjectView
+              projectId={selectedProjectId}
+              onBack={() => setSelectedProjectId(null)}
+            />
+          ) : (
+            <Card>
+              <CardHeader
+                title={
+                  <div className="flex items-center gap-2">
+                    <FolderOpen className="h-5 w-5 text-gray-700" />
+                    <span className="text-2xl font-semibold">My Projects</span>
+                  </div>
+                }
+                subheader="View and manage your approved projects"
+              />
+              <CardContent>
+                {projects.length === 0 ? (
+                  <div className="py-14 text-center">
+                    <FolderOpen className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                    <p className="text-gray-600">
+                      No projects yet. Projects are created when your proposals are approved.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {projects.map((project) => (
+                      <div
+                        key={project.id}
+                        className="border border-gray-200 rounded-xl p-5 bg-white hover:bg-gray-50 transition-colors cursor-pointer"
+                        onClick={() => setSelectedProjectId(project.id)}
+                      >
+                        <div className="flex items-start justify-between gap-4 mb-3">
+                          <div className="flex-1">
+                            <h3 className="font-semibold text-gray-900 text-lg mb-1">
+                              {project.title}
+                            </h3>
+                            <p className="text-sm text-gray-600 line-clamp-2">
+                              {project.description}
+                            </p>
+                          </div>
+                          <Chip
+                            label={
+                              project.status === 'active'
+                                ? 'Active'
+                                : project.status === 'completed'
+                                  ? 'Completed'
+                                  : 'On Hold'
+                            }
+                            color={
+                              project.status === 'active'
+                                ? 'success'
+                                : project.status === 'completed'
+                                  ? 'default'
+                                  : 'warning'
+                            }
+                            size="small"
+                          />
+                        </div>
+                        <div className="flex flex-wrap items-center gap-4 text-sm text-gray-500">
+                          <span>Supervisor: {project.supervisorName}</span>
+                          <span>
+                            Created: {format(new Date(project.createdAt), 'MMM d, yyyy')}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+        </TabPanel>
+
+        <TabPanel value={activeTab} index={2}>
           {selectedProposal || activeProposal ? (
             <Card>
               <CardHeader
