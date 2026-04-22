@@ -14,6 +14,7 @@ import { useSnackbar } from 'notistack';
 import CircularProgress from '@mui/material/CircularProgress';
 import { ProposalForm } from '@/app/components/ProposalForm';
 import { ChatInterface } from '@/app/components/ChatInterface';
+import { ProjectView } from '@/app/components/ProjectView';
 import {
   GraduationCap,
   LogOut,
@@ -25,10 +26,12 @@ import {
   Upload,
   AlertCircle,
   TrendingUp,
+  FolderOpen,
 } from 'lucide-react';
 import { Proposal } from '@/lib/types';
 import { format } from 'date-fns';
 import { deleteProposal, fetchProposals } from '@/lib/proposals';
+import { fetchProjects, Project } from '@/lib/projects';
 
 function TabPanel({
   children,
@@ -80,22 +83,31 @@ export function StudentDashboard() {
 
   const [showProposalForm, setShowProposalForm] = useState(false);
   const [selectedProposal, setSelectedProposal] = useState<Proposal | null>(null);
+  const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState(0);
   const [proposals, setProposals] = useState<Proposal[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const loadProposals = async () => {
+  const loadData = async () => {
     if (!token) {
       setLoading(false);
       return;
     }
 
     try {
-      const data = await fetchProposals(token);
-      setProposals(data.proposals);
+      const [proposalData, projectData] = await Promise.all([
+        fetchProposals(token),
+        fetchProjects(token),
+      ]);
+
+      setProposals(proposalData.proposals);
+      setProjects(projectData.projects);
     } catch (error) {
-      console.error('Failed to load proposals', error);
+      console.error('Failed to load dashboard data', error);
       setProposals([]);
+      setProjects([]);
+      enqueueSnackbar('Failed to load dashboard data', { variant: 'error' });
     } finally {
       setLoading(false);
     }
@@ -113,7 +125,7 @@ export function StudentDashboard() {
     try {
       await deleteProposal(token, proposalId);
       enqueueSnackbar('Proposal deleted successfully', { variant: 'success' });
-      await loadProposals();
+      await loadData();
     } catch (error: any) {
       console.error('Delete proposal error:', error);
       enqueueSnackbar(error.message || 'Failed to delete proposal', {
@@ -123,7 +135,7 @@ export function StudentDashboard() {
   };
 
   useEffect(() => {
-    loadProposals();
+    loadData();
   }, [token]);
 
   const activeProposal = proposals.find((p) => p.status === 'approved');
@@ -141,6 +153,11 @@ export function StudentDashboard() {
   const awaitingAdminAssignmentCount = useMemo(
     () => proposals.filter((p) => p.status === 'pending' && !p.supervisorId).length,
     [proposals]
+  );
+
+  const activeProjectsCount = useMemo(
+    () => projects.filter((p) => p.status === 'active').length,
+    [projects]
   );
 
   const getStatusIcon = (status: string) => {
@@ -184,6 +201,34 @@ export function StudentDashboard() {
     }
 
     return proposal.status;
+  };
+
+  const getProjectStatusColor = (
+    status: string
+  ): 'success' | 'warning' | 'default' => {
+    switch (status) {
+      case 'active':
+        return 'success';
+      case 'on_hold':
+        return 'warning';
+      case 'completed':
+        return 'default';
+      default:
+        return 'default';
+    }
+  };
+
+  const getProjectStatusLabel = (status: string) => {
+    switch (status) {
+      case 'active':
+        return 'Active';
+      case 'on_hold':
+        return 'On Hold';
+      case 'completed':
+        return 'Completed';
+      default:
+        return status;
+    }
   };
 
   if (loading) {
@@ -233,6 +278,19 @@ export function StudentDashboard() {
               </span>
             }
           />
+          <Tab
+            label={
+              <span className="flex items-center gap-2 font-medium">
+                <FolderOpen className="h-4 w-4" />
+                My Projects
+                {projects.length > 0 && (
+                  <span className="ml-1 inline-flex items-center justify-center rounded-full bg-blue-100 px-2 py-0.5 text-xs font-semibold text-blue-700">
+                    {projects.length}
+                  </span>
+                )}
+              </span>
+            }
+          />
           {activeProposal && (
             <Tab
               label={
@@ -247,7 +305,7 @@ export function StudentDashboard() {
 
         <TabPanel value={activeTab} index={0}>
           <div className="space-y-8">
-            <div className="grid md:grid-cols-2 xl:grid-cols-4 gap-6">
+            <div className="grid md:grid-cols-2 xl:grid-cols-5 gap-6">
               <StatCard
                 title="Total Proposals"
                 value={proposals.length}
@@ -267,7 +325,7 @@ export function StudentDashboard() {
               <StatCard
                 title="Approved"
                 value={approvedCount}
-                subtitle="Active projects"
+                subtitle="Accepted proposals"
                 icon={<CheckCircle className="h-5 w-5 text-green-600" />}
                 cardClassName="border border-green-300 bg-green-50"
                 valueClassName="text-green-700"
@@ -280,6 +338,15 @@ export function StudentDashboard() {
                 icon={<AlertCircle className="h-5 w-5 text-red-500" />}
                 cardClassName="border border-red-300 bg-red-50"
                 valueClassName="text-red-600"
+              />
+
+              <StatCard
+                title="Projects"
+                value={projects.length}
+                subtitle="Created from approvals"
+                icon={<FolderOpen className="h-5 w-5 text-blue-600" />}
+                cardClassName="border border-blue-300 bg-blue-50"
+                valueClassName="text-blue-700"
               />
             </div>
 
@@ -316,7 +383,7 @@ export function StudentDashboard() {
                     onSuccess={async () => {
                       setShowProposalForm(false);
                       setActiveTab(0);
-                      await loadProposals();
+                      await loadData();
                     }}
                     onCancel={() => setShowProposalForm(false)}
                   />
@@ -342,92 +409,115 @@ export function StudentDashboard() {
                   </div>
                 ) : (
                   <div className="space-y-4">
-                    {proposals.map((proposal) => (
-                      <div
-                        key={proposal.id}
-                        className="border border-gray-200 rounded-xl p-5 bg-white hover:bg-gray-50 transition-colors"
-                      >
-                        <div className="flex items-start justify-between gap-4 mb-3">
-                          <div className="flex-1">
-                            <h3 className="font-semibold text-gray-900 text-lg mb-1">
-                              {proposal.title}
-                            </h3>
-                            <p className="text-sm text-gray-600 line-clamp-3">
-                              {proposal.description}
-                            </p>
+                    {proposals.map((proposal) => {
+                      const linkedProject = projects.find(
+                        (project) => project.proposalId === proposal.id
+                      );
+
+                      return (
+                        <div
+                          key={proposal.id}
+                          className="border border-gray-200 rounded-xl p-5 bg-white hover:bg-gray-50 transition-colors"
+                        >
+                          <div className="flex items-start justify-between gap-4 mb-3">
+                            <div className="flex-1">
+                              <h3 className="font-semibold text-gray-900 text-lg mb-1">
+                                {proposal.title}
+                              </h3>
+                              <p className="text-sm text-gray-600 line-clamp-3">
+                                {proposal.description}
+                              </p>
+                            </div>
+
+                            <Chip
+                              icon={getStatusIcon(proposal.status) || undefined}
+                              label={getStatusLabel(proposal)}
+                              color={getStatusColor(proposal.status)}
+                              size="small"
+                              variant="outlined"
+                            />
                           </div>
 
-                          <Chip
-                            icon={getStatusIcon(proposal.status) || undefined}
-                            label={getStatusLabel(proposal)}
-                            color={getStatusColor(proposal.status)}
-                            size="small"
-                            variant="outlined"
-                          />
-                        </div>
-
-                        <div className="flex flex-wrap items-center gap-4 text-sm text-gray-500 mb-3">
-                          <span>
-                            Submitted: {format(new Date(proposal.submittedAt), 'MMM d, yyyy')}
-                          </span>
-
-                          {proposal.supervisorName ? (
-                            <span>Supervisor: {proposal.supervisorName}</span>
-                          ) : (
-                            <span>Supervisor: Any Supervisor / Awaiting admin assignment</span>
-                          )}
-
-                          {proposal.documentName && (
-                            <span className="flex items-center gap-1">
-                              <FileText className="h-3 w-3" />
-                              {proposal.documentName}
+                          <div className="flex flex-wrap items-center gap-4 text-sm text-gray-500 mb-3">
+                            <span>
+                              Submitted:{' '}
+                              {format(new Date(proposal.submittedAt), 'MMM d, yyyy')}
                             </span>
-                          )}
-                        </div>
 
-                        {proposal.feedback && (
-                          <div
-                            className={`p-3 rounded-lg mb-3 ${
-                              proposal.status === 'approved'
-                                ? 'bg-green-50 border border-green-200'
-                                : 'bg-red-50 border border-red-200'
-                            }`}
-                          >
-                            <p className="text-sm font-medium text-gray-900 mb-1">
-                              Feedback:
-                            </p>
-                            <p className="text-sm text-gray-700">{proposal.feedback}</p>
+                            {proposal.supervisorName ? (
+                              <span>Supervisor: {proposal.supervisorName}</span>
+                            ) : (
+                              <span>
+                                Supervisor: Any Supervisor / Awaiting admin assignment
+                              </span>
+                            )}
+
+                            {proposal.documentName && (
+                              <span className="flex items-center gap-1">
+                                <FileText className="h-3 w-3" />
+                                {proposal.documentName}
+                              </span>
+                            )}
                           </div>
-                        )}
 
-                        <div className="mt-3 flex gap-3 flex-wrap">
-                          {proposal.status === 'approved' && (
-                            <Button
-                              variant="outlined"
-                              size="small"
-                              startIcon={<MessageSquare className="h-4 w-4" />}
-                              onClick={() => {
-                                setSelectedProposal(proposal);
-                                setActiveTab(1);
-                              }}
+                          {proposal.feedback && (
+                            <div
+                              className={`p-3 rounded-lg mb-3 ${
+                                proposal.status === 'approved'
+                                  ? 'bg-green-50 border border-green-200'
+                                  : 'bg-red-50 border border-red-200'
+                              }`}
                             >
-                              Chat with Supervisor
-                            </Button>
+                              <p className="text-sm font-medium text-gray-900 mb-1">
+                                Feedback:
+                              </p>
+                              <p className="text-sm text-gray-700">{proposal.feedback}</p>
+                            </div>
                           )}
 
-                          {proposal.status !== 'approved' && (
-                            <Button
-                              variant="outlined"
-                              color="error"
-                              size="small"
-                              onClick={() => handleDeleteProposal(proposal.id)}
-                            >
-                              Delete
-                            </Button>
-                          )}
+                          <div className="mt-3 flex gap-3 flex-wrap">
+                            {proposal.status === 'approved' && (
+                              <Button
+                                variant="outlined"
+                                size="small"
+                                startIcon={<MessageSquare className="h-4 w-4" />}
+                                onClick={() => {
+                                  setSelectedProposal(proposal);
+                                  setActiveTab(2);
+                                }}
+                              >
+                                Chat with Supervisor
+                              </Button>
+                            )}
+
+                            {proposal.status === 'approved' && linkedProject && (
+                              <Button
+                                variant="contained"
+                                size="small"
+                                startIcon={<FolderOpen className="h-4 w-4" />}
+                                onClick={() => {
+                                  setSelectedProjectId(linkedProject.id);
+                                  setActiveTab(1);
+                                }}
+                              >
+                                Open Project
+                              </Button>
+                            )}
+
+                            {proposal.status !== 'approved' && (
+                              <Button
+                                variant="outlined"
+                                color="error"
+                                size="small"
+                                onClick={() => handleDeleteProposal(proposal.id)}
+                              >
+                                Delete
+                              </Button>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </CardContent>
@@ -436,6 +526,108 @@ export function StudentDashboard() {
         </TabPanel>
 
         <TabPanel value={activeTab} index={1}>
+          {selectedProjectId ? (
+            <ProjectView
+              projectId={selectedProjectId}
+              onBack={async () => {
+                setSelectedProjectId(null);
+                await loadData();
+              }}
+            />
+          ) : (
+            <Card>
+              <CardHeader
+                title={
+                  <div className="flex items-center gap-2">
+                    <FolderOpen className="h-5 w-5 text-gray-700" />
+                    <span className="text-2xl font-semibold">My Projects</span>
+                  </div>
+                }
+                subheader="Manage and track your approved projects"
+              />
+              <CardContent>
+                {projects.length === 0 ? (
+                  <div className="py-14 text-center">
+                    <FolderOpen className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                    <p className="text-gray-600">No projects available yet.</p>
+                    <p className="text-sm text-gray-500 mt-2">
+                      Projects will appear here once your proposals are approved.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {projects.map((project) => (
+                      <div
+                        key={project.id}
+                        className="border border-gray-200 rounded-xl p-5 bg-white hover:bg-gray-50 transition-colors"
+                      >
+                        <div className="flex items-start justify-between gap-4 mb-3">
+                          <div className="flex-1">
+                            <h3 className="font-semibold text-gray-900 text-lg mb-1">
+                              {project.title}
+                            </h3>
+                            <p className="text-sm text-gray-600 line-clamp-3 mb-1">
+                              {project.description}
+                            </p>
+                            <p className="text-sm text-gray-600 mb-1">
+                              Supervisor: {project.supervisorName}
+                            </p>
+                            <p className="text-sm text-gray-500">
+                              Created: {format(new Date(project.createdAt), 'MMM d, yyyy')}
+                            </p>
+                          </div>
+
+                          <Chip
+                            label={getProjectStatusLabel(project.status)}
+                            color={getProjectStatusColor(project.status)}
+                            size="small"
+                            variant="outlined"
+                          />
+                        </div>
+
+                        <div className="flex flex-wrap gap-3 text-sm mb-3">
+                          {project.githubUrl && (
+                            <a
+                              href={project.githubUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-blue-600 hover:underline"
+                            >
+                              GitHub Repository
+                            </a>
+                          )}
+                          {project.liveUrl && (
+                            <a
+                              href={project.liveUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-blue-600 hover:underline"
+                            >
+                              Live Demo
+                            </a>
+                          )}
+                        </div>
+
+                        <div className="mt-3 flex gap-3 flex-wrap">
+                          <Button
+                            variant="contained"
+                            size="small"
+                            startIcon={<FolderOpen className="h-4 w-4" />}
+                            onClick={() => setSelectedProjectId(project.id)}
+                          >
+                            Open Project
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+        </TabPanel>
+
+        <TabPanel value={activeTab} index={2}>
           {selectedProposal || activeProposal ? (
             <Card>
               <CardHeader

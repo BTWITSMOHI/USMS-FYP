@@ -1,8 +1,10 @@
 const pool = require('../db');
+const { createProjectFromProposal } = require('./projectController');
 
 const createProposal = async (request, reply) => {
   try {
-    const { title, description, supervisorId, documentName, documentUrl } = request.body;
+    const { title, description, supervisorId, documentName, documentUrl } =
+      request.body;
     const user = request.user;
 
     if (user.role !== 'student') {
@@ -19,7 +21,11 @@ const createProposal = async (request, reply) => {
 
     let validatedSupervisorId = null;
 
-    if (supervisorId !== undefined && supervisorId !== null && supervisorId !== '') {
+    if (
+      supervisorId !== undefined &&
+      supervisorId !== null &&
+      supervisorId !== ''
+    ) {
       const supervisorCheck = await pool.query(
         `
         SELECT id, role
@@ -87,7 +93,7 @@ const getProposals = async (request, reply) => {
     if (user.role === 'student') {
       result = await pool.query(
         `
-        SELECT 
+        SELECT
           p.*,
           s.name AS student_name,
           sup.name AS supervisor_name
@@ -102,7 +108,7 @@ const getProposals = async (request, reply) => {
     } else if (user.role === 'supervisor') {
       result = await pool.query(
         `
-        SELECT 
+        SELECT
           p.*,
           s.name AS student_name,
           sup.name AS supervisor_name
@@ -117,7 +123,7 @@ const getProposals = async (request, reply) => {
     } else if (user.role === 'admin') {
       result = await pool.query(
         `
-        SELECT 
+        SELECT
           p.*,
           s.name AS student_name,
           sup.name AS supervisor_name
@@ -286,6 +292,10 @@ const reviewProposal = async (request, reply) => {
       `,
       [status, feedback || null, proposalId]
     );
+
+    if (status === 'approved') {
+      await createProjectFromProposal(proposalId);
+    }
 
     return reply.send({
       message: 'Proposal reviewed successfully',

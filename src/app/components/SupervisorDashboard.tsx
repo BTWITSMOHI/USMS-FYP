@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { fetchProposals, reviewProposal } from '@/lib/proposals';
+import { fetchProjects, Project } from '@/lib/projects';
 import Button from '@mui/material/Button';
 import Card from '@mui/material/Card';
 import CardContent from '@mui/material/CardContent';
@@ -20,6 +21,7 @@ import TextField from '@mui/material/TextField';
 import LinearProgress from '@mui/material/LinearProgress';
 import { useSnackbar } from 'notistack';
 import { ChatInterface } from '@/app/components/ChatInterface';
+import { ProjectView } from '@/app/components/ProjectView';
 import {
   GraduationCap,
   LogOut,
@@ -31,6 +33,7 @@ import {
   Users,
   TrendingUp,
   UserCheck,
+  FolderOpen,
 } from 'lucide-react';
 import { Proposal } from '@/lib/types';
 import { format } from 'date-fns';
@@ -85,7 +88,9 @@ export function SupervisorDashboard() {
 
   const [activeTab, setActiveTab] = useState(0);
   const [selectedProposal, setSelectedProposal] = useState<Proposal | null>(null);
+  const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
   const [proposals, setProposals] = useState<Proposal[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
 
   const [reviewOpen, setReviewOpen] = useState(false);
@@ -94,26 +99,32 @@ export function SupervisorDashboard() {
   const [reviewingProposal, setReviewingProposal] = useState<Proposal | null>(null);
   const [submittingReview, setSubmittingReview] = useState(false);
 
-  const loadProposals = async () => {
+  const loadData = async () => {
     if (!token) {
       setLoading(false);
       return;
     }
 
     try {
-      const data = await fetchProposals(token);
-      setProposals(data.proposals);
+      const [proposalData, projectData] = await Promise.all([
+        fetchProposals(token),
+        fetchProjects(token),
+      ]);
+
+      setProposals(proposalData.proposals);
+      setProjects(projectData.projects);
     } catch (error) {
-      console.error('Failed to load proposals', error);
-      enqueueSnackbar('Failed to load proposals', { variant: 'error' });
+      console.error('Failed to load dashboard data', error);
+      enqueueSnackbar('Failed to load dashboard data', { variant: 'error' });
       setProposals([]);
+      setProjects([]);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    loadProposals();
+    loadData();
   }, [token]);
 
   const approvedProposals = useMemo(
@@ -129,6 +140,11 @@ export function SupervisorDashboard() {
   const rejectedProposals = useMemo(
     () => proposals.filter((p) => p.status === 'rejected'),
     [proposals]
+  );
+
+  const activeProjectsCount = useMemo(
+    () => projects.filter((p) => p.status === 'active').length,
+    [projects]
   );
 
   const capacity = user?.role === 'supervisor' ? user.maxStudents || 0 : 0;
@@ -172,6 +188,34 @@ export function SupervisorDashboard() {
     return proposal.status;
   };
 
+  const getProjectStatusColor = (
+    status: string
+  ): 'success' | 'warning' | 'default' => {
+    switch (status) {
+      case 'active':
+        return 'success';
+      case 'on_hold':
+        return 'warning';
+      case 'completed':
+        return 'default';
+      default:
+        return 'default';
+    }
+  };
+
+  const getProjectStatusLabel = (status: string) => {
+    switch (status) {
+      case 'active':
+        return 'Active';
+      case 'on_hold':
+        return 'On Hold';
+      case 'completed':
+        return 'Completed';
+      default:
+        return status;
+    }
+  };
+
   const openReviewDialog = (
     proposal: Proposal,
     status: 'approved' | 'rejected'
@@ -201,7 +245,7 @@ export function SupervisorDashboard() {
       setReviewOpen(false);
       setReviewFeedback('');
       setReviewingProposal(null);
-      await loadProposals();
+      await loadData();
     } catch (error) {
       console.error('Review submit error:', error);
       enqueueSnackbar('Failed to submit review', { variant: 'error' });
@@ -262,6 +306,19 @@ export function SupervisorDashboard() {
           />
           <Tab
             label={
+              <span className="flex items-center gap-2 font-medium">
+                <FolderOpen className="h-4 w-4" />
+                Student Projects
+                {projects.length > 0 && (
+                  <span className="ml-1 inline-flex items-center justify-center rounded-full bg-purple-100 px-2 py-0.5 text-xs font-semibold text-purple-700">
+                    {projects.length}
+                  </span>
+                )}
+              </span>
+            }
+          />
+          <Tab
+            label={
               <span className="flex items-center gap-2">
                 <MessageSquare className="h-4 w-4" />
                 Student Chat
@@ -272,7 +329,7 @@ export function SupervisorDashboard() {
 
         <TabPanel value={activeTab} index={0}>
           <div className="space-y-8">
-            <div className="grid md:grid-cols-2 xl:grid-cols-4 gap-6">
+            <div className="grid md:grid-cols-2 xl:grid-cols-5 gap-6">
               <StatCard
                 title="Total Assigned"
                 value={proposals.length}
@@ -292,7 +349,7 @@ export function SupervisorDashboard() {
               <StatCard
                 title="Approved"
                 value={approvedProposals.length}
-                subtitle="Active student projects"
+                subtitle="Accepted proposals"
                 icon={<CheckCircle className="h-5 w-5 text-green-600" />}
                 cardClassName="border border-green-300 bg-green-50"
                 valueClassName="text-green-700"
@@ -305,6 +362,15 @@ export function SupervisorDashboard() {
                 icon={<XCircle className="h-5 w-5 text-red-500" />}
                 cardClassName="border border-red-300 bg-red-50"
                 valueClassName="text-red-600"
+              />
+
+              <StatCard
+                title="Projects"
+                value={projects.length}
+                subtitle="Created from approvals"
+                icon={<FolderOpen className="h-5 w-5 text-purple-600" />}
+                cardClassName="border border-purple-300 bg-purple-50"
+                valueClassName="text-purple-700"
               />
             </div>
 
@@ -375,7 +441,7 @@ export function SupervisorDashboard() {
 
                     <div className="rounded-2xl bg-green-50 p-5 flex items-center justify-between">
                       <div>
-                        <p className="text-sm text-gray-600">Approved Projects</p>
+                        <p className="text-sm text-gray-600">Approved Proposals</p>
                         <p className="text-4xl font-bold text-green-600">
                           {approvedProposals.length}
                         </p>
@@ -415,89 +481,109 @@ export function SupervisorDashboard() {
                   </div>
                 ) : (
                   <div className="space-y-4">
-                    {proposals.map((proposal) => (
-                      <div
-                        key={proposal.id}
-                        className="border border-gray-200 rounded-xl p-5 bg-white hover:bg-gray-50 transition-colors"
-                      >
-                        <div className="flex items-start justify-between gap-4 mb-3">
-                          <div className="flex-1">
-                            <h3 className="font-semibold text-gray-900 text-lg mb-1">
-                              {proposal.title}
-                            </h3>
-                            <p className="text-sm text-gray-600 mb-1">
-                              Student: {proposal.studentName}
-                            </p>
-                            <p className="text-sm text-gray-600 line-clamp-3">
-                              {proposal.description}
-                            </p>
+                    {proposals.map((proposal) => {
+                      const linkedProject = projects.find(
+                        (project) => project.proposalId === proposal.id
+                      );
+
+                      return (
+                        <div
+                          key={proposal.id}
+                          className="border border-gray-200 rounded-xl p-5 bg-white hover:bg-gray-50 transition-colors"
+                        >
+                          <div className="flex items-start justify-between gap-4 mb-3">
+                            <div className="flex-1">
+                              <h3 className="font-semibold text-gray-900 text-lg mb-1">
+                                {proposal.title}
+                              </h3>
+                              <p className="text-sm text-gray-600 mb-1">
+                                Student: {proposal.studentName}
+                              </p>
+                              <p className="text-sm text-gray-600 line-clamp-3">
+                                {proposal.description}
+                              </p>
+                            </div>
+
+                            <Chip
+                              icon={getStatusIcon(proposal.status) || undefined}
+                              label={getStatusLabel(proposal)}
+                              color={getStatusColor(proposal.status)}
+                              size="small"
+                              variant="outlined"
+                            />
                           </div>
 
-                          <Chip
-                            icon={getStatusIcon(proposal.status) || undefined}
-                            label={getStatusLabel(proposal)}
-                            color={getStatusColor(proposal.status)}
-                            size="small"
-                            variant="outlined"
-                          />
-                        </div>
-
-                        <div className="flex flex-wrap items-center gap-4 text-sm text-gray-500 mb-3">
-                          <span>
-                            Submitted: {format(new Date(proposal.submittedAt), 'MMM d, yyyy')}
-                          </span>
-                        </div>
-
-                        {proposal.feedback && (
-                          <div
-                            className={`p-3 rounded-lg mb-3 ${
-                              proposal.status === 'approved'
-                                ? 'bg-green-50 border border-green-200'
-                                : 'bg-red-50 border border-red-200'
-                            }`}
-                          >
-                            <p className="text-sm font-medium text-gray-900 mb-1">
-                              Feedback:
-                            </p>
-                            <p className="text-sm text-gray-700">{proposal.feedback}</p>
+                          <div className="flex flex-wrap items-center gap-4 text-sm text-gray-500 mb-3">
+                            <span>
+                              Submitted:{' '}
+                              {format(new Date(proposal.submittedAt), 'MMM d, yyyy')}
+                            </span>
                           </div>
-                        )}
 
-                        <div className="flex flex-wrap gap-3">
-                          {proposal.status === 'pending' && (
-                            <>
-                              <Button
-                                variant="contained"
-                                color="success"
-                                onClick={() => openReviewDialog(proposal, 'approved')}
-                              >
-                                Approve
-                              </Button>
+                          {proposal.feedback && (
+                            <div
+                              className={`p-3 rounded-lg mb-3 ${
+                                proposal.status === 'approved'
+                                  ? 'bg-green-50 border border-green-200'
+                                  : 'bg-red-50 border border-red-200'
+                              }`}
+                            >
+                              <p className="text-sm font-medium text-gray-900 mb-1">
+                                Feedback:
+                              </p>
+                              <p className="text-sm text-gray-700">{proposal.feedback}</p>
+                            </div>
+                          )}
+
+                          <div className="flex flex-wrap gap-3">
+                            {proposal.status === 'pending' && (
+                              <>
+                                <Button
+                                  variant="contained"
+                                  color="success"
+                                  onClick={() => openReviewDialog(proposal, 'approved')}
+                                >
+                                  Approve
+                                </Button>
+                                <Button
+                                  variant="outlined"
+                                  color="error"
+                                  onClick={() => openReviewDialog(proposal, 'rejected')}
+                                >
+                                  Reject
+                                </Button>
+                              </>
+                            )}
+
+                            {proposal.status === 'approved' && (
                               <Button
                                 variant="outlined"
-                                color="error"
-                                onClick={() => openReviewDialog(proposal, 'rejected')}
+                                startIcon={<MessageSquare className="h-4 w-4" />}
+                                onClick={() => {
+                                  setSelectedProposal(proposal);
+                                  setActiveTab(2);
+                                }}
                               >
-                                Reject
+                                Open Chat
                               </Button>
-                            </>
-                          )}
+                            )}
 
-                          {proposal.status === 'approved' && (
-                            <Button
-                              variant="outlined"
-                              startIcon={<MessageSquare className="h-4 w-4" />}
-                              onClick={() => {
-                                setSelectedProposal(proposal);
-                                setActiveTab(1);
-                              }}
-                            >
-                              Open Chat
-                            </Button>
-                          )}
+                            {proposal.status === 'approved' && linkedProject && (
+                              <Button
+                                variant="contained"
+                                startIcon={<FolderOpen className="h-4 w-4" />}
+                                onClick={() => {
+                                  setSelectedProjectId(linkedProject.id);
+                                  setActiveTab(1);
+                                }}
+                              >
+                                Open Project
+                              </Button>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </CardContent>
@@ -506,6 +592,104 @@ export function SupervisorDashboard() {
         </TabPanel>
 
         <TabPanel value={activeTab} index={1}>
+          {selectedProjectId ? (
+            <ProjectView
+              projectId={selectedProjectId}
+              onBack={async () => {
+                setSelectedProjectId(null);
+                await loadData();
+              }}
+            />
+          ) : (
+            <Card>
+              <CardHeader
+                title={
+                  <div className="flex items-center gap-2">
+                    <FolderOpen className="h-5 w-5 text-gray-700" />
+                    <span className="text-2xl font-semibold">Student Projects</span>
+                  </div>
+                }
+                subheader="Manage and review projects created from approved proposals"
+              />
+              <CardContent>
+                {projects.length === 0 ? (
+                  <div className="py-14 text-center">
+                    <FolderOpen className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                    <p className="text-gray-600">No student projects available yet.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {projects.map((project) => (
+                      <div
+                        key={project.id}
+                        className="border border-gray-200 rounded-xl p-5 bg-white hover:bg-gray-50 transition-colors"
+                      >
+                        <div className="flex items-start justify-between gap-4 mb-3">
+                          <div className="flex-1">
+                            <h3 className="font-semibold text-gray-900 text-lg mb-1">
+                              {project.title}
+                            </h3>
+                            <p className="text-sm text-gray-600 mb-1">
+                              Student: {project.studentName}
+                            </p>
+                            <p className="text-sm text-gray-600 line-clamp-3 mb-1">
+                              {project.description}
+                            </p>
+                            <p className="text-sm text-gray-500">
+                              Created: {format(new Date(project.createdAt), 'MMM d, yyyy')}
+                            </p>
+                          </div>
+
+                          <Chip
+                            label={getProjectStatusLabel(project.status)}
+                            color={getProjectStatusColor(project.status)}
+                            size="small"
+                            variant="outlined"
+                          />
+                        </div>
+
+                        <div className="flex flex-wrap gap-3 text-sm mb-3">
+                          {project.githubUrl && (
+                            <a
+                              href={project.githubUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-blue-600 hover:underline"
+                            >
+                              GitHub Repository
+                            </a>
+                          )}
+                          {project.liveUrl && (
+                            <a
+                              href={project.liveUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-blue-600 hover:underline"
+                            >
+                              Live Demo
+                            </a>
+                          )}
+                        </div>
+
+                        <div className="flex flex-wrap gap-3">
+                          <Button
+                            variant="contained"
+                            startIcon={<FolderOpen className="h-4 w-4" />}
+                            onClick={() => setSelectedProjectId(project.id)}
+                          >
+                            Open Project
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+        </TabPanel>
+
+        <TabPanel value={activeTab} index={2}>
           {selectedProposal ? (
             <Card>
               <CardHeader

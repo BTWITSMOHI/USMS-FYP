@@ -1,12 +1,16 @@
 require('dotenv').config();
-const supervisorRoutes = require('./routes/supervisors');
+
 const fastify = require('fastify')({ logger: true });
 const cors = require('@fastify/cors');
 const jwt = require('@fastify/jwt');
 const pool = require('./db');
+
+// Routes
 const authRoutes = require('./routes/auth');
 const proposalRoutes = require('./routes/proposals');
 const messageRoutes = require('./routes/messages');
+const supervisorRoutes = require('./routes/supervisors');
+const projectRoutes = require('./routes/projects'); 
 
 async function buildApp() {
   await fastify.register(cors, {
@@ -31,6 +35,7 @@ async function buildApp() {
     }
   });
 
+  // Health check
   fastify.get('/', async () => {
     return { message: 'USMS backend is running' };
   });
@@ -43,10 +48,15 @@ async function buildApp() {
     };
   });
 
+  // Register routes
   await fastify.register(authRoutes, { prefix: '/auth' });
   await fastify.register(proposalRoutes, { prefix: '/proposals' });
   await fastify.register(messageRoutes);
   await fastify.register(supervisorRoutes, { prefix: '/supervisors' });
+
+  
+  await fastify.register(projectRoutes, { prefix: '/projects' });
+
   return fastify;
 }
 
