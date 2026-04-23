@@ -64,6 +64,29 @@ export async function deleteProposal(
   });
 }
 
+export async function fetchProposalMessages(
+  token: string,
+  proposalId: number | string
+) {
+  return apiRequest<{ messages: any[] }>(`/proposals/${proposalId}/messages`, {
+    token,
+  });
+}
+
+export async function sendProposalMessage(
+  token: string,
+  proposalId: number | string,
+  data: {
+    content: string;
+  }
+) {
+  return apiRequest<{ message: string; data: any }>(`/proposals/${proposalId}/messages`, {
+    method: 'POST',
+    token,
+    body: data,
+  });
+}
+
 export async function updateProposal(
   token: string,
   proposalId: number | string,

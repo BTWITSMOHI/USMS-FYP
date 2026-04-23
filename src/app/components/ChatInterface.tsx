@@ -1,124 +1,168 @@
 'use client';
 
-import React from "react"
-import { useState, useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { useData } from '@/contexts/DataContext';
 import Button from '@mui/material/Button';
-import IconButton from '@mui/material/IconButton';
 import TextField from '@mui/material/TextField';
 import Avatar from '@mui/material/Avatar';
 import Box from '@mui/material/Box';
-import { Send, Paperclip, File } from 'lucide-react';
+import CircularProgress from '@mui/material/CircularProgress';
+import { Send } from 'lucide-react';
 import { format } from 'date-fns';
 import { useSnackbar } from 'notistack';
+import {
+  fetchProposalMessages,
+  sendProposalMessage,
+} from '@/lib/proposals';
+
+interface ChatMessage {
+  id: number | string;
+  proposalId: number | string;
+  senderId: number | string;
+  senderName: string;
+  senderRole: string;
+  content: string;
+  timestamp: string;
+}
 
 interface ChatInterfaceProps {
-  proposalId: string;
+  proposalId: number | string;
 }
 
 export function ChatInterface({ proposalId }: ChatInterfaceProps) {
-  const { user } = useAuth();
-  const { getProposalMessages, addMessage } = useData();
+  const { user, token } = useAuth();
   const { enqueueSnackbar } = useSnackbar();
+
   const [messageText, setMessageText] = useState('');
-  const [attachedFile, setAttachedFile] = useState<File | null>(null);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [sending, setSending] = useState(false);
+
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  const messages = getProposalMessages(proposalId);
+  const loadMessages = async (showLoader = false) => {
+    if (!token || !proposalId) return;
+
+    try {
+      if (showLoader) setLoading(true);
+
+      const data = await fetchProposalMessages(token, proposalId);
+      setMessages(data.messages || []);
+    } catch (error) {
+      console.error('Failed to load messages:', error);
+      if (showLoader) {
+        enqueueSnackbar('Failed to load messages', { variant: 'error' });
+      }
+    } finally {
+      if (showLoader) setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    // Scroll to bottom when messages change
+    loadMessages(true);
+
+    if (!token || !proposalId) return;
+
+    const interval = setInterval(() => {
+      loadMessages(false);
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [token, proposalId]);
+
+  useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages]);
 
-  const handleFileAttach = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      if (file.size > 5 * 1024 * 1024) {
-        enqueueSnackbar('File size must be less than 5MB', { variant: 'error' });
-        return;
-      }
-      setAttachedFile(file);
-      enqueueSnackbar(`File "${file.name}" attached`, { variant: 'success' });
-    }
-  };
-
-  const handleSendMessage = (e: React.FormEvent) => {
+  const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!messageText.trim() && !attachedFile) {
-      return;
+    if (!messageText.trim() || !token) return;
+
+    try {
+      setSending(true);
+
+      await sendProposalMessage(token, proposalId, {
+        content: messageText.trim(),
+      });
+
+      setMessageText('');
+      await loadMessages(false);
+    } catch (error) {
+      console.error('Failed to send message:', error);
+      enqueueSnackbar('Failed to send message', { variant: 'error' });
+    } finally {
+      setSending(false);
     }
-
-    if (!user) return;
-
-    addMessage({
-      proposalId,
-      senderId: user.id,
-      senderName: user.name,
-      senderRole: user.role,
-      content: messageText.trim(),
-      fileName: attachedFile?.name,
-      fileUrl: attachedFile ? URL.createObjectURL(attachedFile) : undefined,
-    });
-
-    setMessageText('');
-    setAttachedFile(null);
   };
 
   const getInitials = (name: string) => {
     return name
       .split(' ')
-      .map(n => n[0])
+      .map((n) => n[0])
       .join('')
       .toUpperCase()
       .slice(0, 2);
   };
 
-  const isOwnMessage = (senderId: string) => senderId === user?.id;
+  const isOwnMessage = (senderId: string | number) => {
+    return String(senderId) === String(user?.id);
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-10">
+        <CircularProgress />
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-[600px] bg-white rounded-lg border">
-      {/* Messages Area */}
-      <Box 
+      <Box
         ref={scrollRef}
-        sx={{ 
-          flex: 1, 
-          overflowY: 'auto', 
-          p: 2 
+        sx={{
+          flex: 1,
+          overflowY: 'auto',
+          p: 2,
         }}
       >
         <div className="space-y-4">
           {messages.length === 0 ? (
             <div className="text-center py-12 text-gray-500">
-              <p>No messages yet. Start the conversation!</p>
+              <p>No messages yet. Start the conversation.</p>
             </div>
           ) : (
             messages.map((message) => (
               <div
                 key={message.id}
-                className={`flex gap-3 ${isOwnMessage(message.senderId) ? 'flex-row-reverse' : ''}`}
+                className={`flex gap-3 ${
+                  isOwnMessage(message.senderId) ? 'flex-row-reverse' : ''
+                }`}
               >
-                <Avatar 
-                  sx={{ 
-                    width: 32, 
+                <Avatar
+                  sx={{
+                    width: 32,
                     height: 32,
-                    bgcolor: message.senderRole === 'student' ? '#dbeafe' : '#ede9fe',
-                    color: message.senderRole === 'student' ? '#2563eb' : '#7c3aed',
-                    fontSize: '0.75rem'
+                    bgcolor:
+                      message.senderRole === 'student' ? '#dbeafe' : '#ede9fe',
+                    color:
+                      message.senderRole === 'student' ? '#2563eb' : '#7c3aed',
+                    fontSize: '0.75rem',
                   }}
                 >
                   {getInitials(message.senderName)}
                 </Avatar>
 
-                <div className={`flex-1 max-w-[70%] ${isOwnMessage(message.senderId) ? 'items-end' : ''}`}>
+                <div
+                  className={`flex-1 max-w-[70%] ${
+                    isOwnMessage(message.senderId) ? 'items-end' : ''
+                  }`}
+                >
                   <div className="flex items-baseline gap-2 mb-1">
-                    <span className={`text-sm font-medium ${
-                      isOwnMessage(message.senderId) ? 'text-right' : ''
-                    }`}>
+                    <span className="text-sm font-medium">
                       {isOwnMessage(message.senderId) ? 'You' : message.senderName}
                     </span>
                     <span className="text-xs text-gray-500">
@@ -126,31 +170,14 @@ export function ChatInterface({ proposalId }: ChatInterfaceProps) {
                     </span>
                   </div>
 
-                  <div className={`rounded-lg p-3 ${
-                    isOwnMessage(message.senderId)
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-gray-100 text-gray-900'
-                  }`}>
-                    {message.content && (
-                      <p className="text-sm whitespace-pre-wrap">{message.content}</p>
-                    )}
-
-                    {message.fileName && (
-                      <div className={`mt-2 pt-2 border-t ${
-                        isOwnMessage(message.senderId) ? 'border-blue-500' : 'border-gray-300'
-                      }`}>
-                        <a
-                          href={message.fileUrl}
-                          download={message.fileName}
-                          className={`flex items-center gap-2 text-sm hover:underline ${
-                            isOwnMessage(message.senderId) ? 'text-blue-100' : 'text-blue-600'
-                          }`}
-                        >
-                          <File className="h-4 w-4" />
-                          {message.fileName}
-                        </a>
-                      </div>
-                    )}
+                  <div
+                    className={`rounded-lg p-3 ${
+                      isOwnMessage(message.senderId)
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-gray-100 text-gray-900'
+                    }`}
+                  >
+                    <p className="text-sm whitespace-pre-wrap">{message.content}</p>
                   </div>
                 </div>
               </div>
@@ -159,53 +186,21 @@ export function ChatInterface({ proposalId }: ChatInterfaceProps) {
         </div>
       </Box>
 
-      {/* Input Area */}
       <div className="border-t p-4">
-        {attachedFile && (
-          <div className="mb-2 p-2 bg-gray-100 rounded-lg flex items-center justify-between">
-            <div className="flex items-center gap-2 text-sm">
-              <File className="h-4 w-4 text-gray-600" />
-              <span className="text-gray-700">{attachedFile.name}</span>
-              <span className="text-gray-500">
-                ({(attachedFile.size / 1024).toFixed(1)} KB)
-              </span>
-            </div>
-            <Button
-              variant="text"
-              size="small"
-              onClick={() => setAttachedFile(null)}
-            >
-              Remove
-            </Button>
-          </div>
-        )}
-
         <form onSubmit={handleSendMessage} className="flex gap-2">
-          <input
-            type="file"
-            id="file-input"
-            className="hidden"
-            onChange={handleFileAttach}
-          />
-          <IconButton
-            onClick={() => document.getElementById('file-input')?.click()}
-            sx={{ border: '1px solid', borderColor: 'divider' }}
-          >
-            <Paperclip className="h-4 w-4" />
-          </IconButton>
-
           <TextField
             placeholder="Type your message..."
             value={messageText}
             onChange={(e) => setMessageText(e.target.value)}
             fullWidth
             size="small"
+            disabled={sending}
           />
 
-          <Button 
-            type="submit" 
+          <Button
+            type="submit"
             variant="contained"
-            disabled={!messageText.trim() && !attachedFile}
+            disabled={!messageText.trim() || sending}
           >
             <Send className="h-4 w-4" />
           </Button>

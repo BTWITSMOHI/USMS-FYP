@@ -31,10 +31,9 @@ interface DataProviderProps {
 export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
   const [proposals, setProposals] = useState<Proposal[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
-  const [supervisors, setSupervisors] = useState<Supervisor[]>(mockSupervisors);
+  const [supervisors] = useState<Supervisor[]>(mockSupervisors);
 
   useEffect(() => {
-    // Load data from localStorage or use mock data
     const storedProposals = localStorage.getItem('proposals');
     const storedMessages = localStorage.getItem('messages');
 
@@ -51,6 +50,30 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
       setMessages(mockMessages);
       localStorage.setItem('messages', JSON.stringify(mockMessages));
     }
+
+    const handleStorageChange = (event: StorageEvent) => {
+      if (event.key === 'proposals' && event.newValue) {
+        try {
+          setProposals(JSON.parse(event.newValue));
+        } catch (error) {
+          console.error('Failed to sync proposals from localStorage:', error);
+        }
+      }
+
+      if (event.key === 'messages' && event.newValue) {
+        try {
+          setMessages(JSON.parse(event.newValue));
+        } catch (error) {
+          console.error('Failed to sync messages from localStorage:', error);
+        }
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+    };
   }, []);
 
   const addProposal = (proposal: Omit<Proposal, 'id' | 'submittedAt'>) => {
@@ -67,7 +90,7 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
   };
 
   const updateProposal = (id: string, updates: Partial<Proposal>) => {
-    const updatedProposals = proposals.map(p =>
+    const updatedProposals = proposals.map((p) =>
       p.id === id ? { ...p, ...updates } : p
     );
     setProposals(updatedProposals);
@@ -87,15 +110,15 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
   };
 
   const getProposalMessages = (proposalId: string) => {
-    return messages.filter(m => m.proposalId === proposalId);
+    return messages.filter((m) => m.proposalId === proposalId);
   };
 
   const getStudentProposals = (studentId: string) => {
-    return proposals.filter(p => p.studentId === studentId);
+    return proposals.filter((p) => p.studentId === studentId);
   };
 
   const getSupervisorProposals = (supervisorId: string) => {
-    return proposals.filter(p => p.supervisorId === supervisorId);
+    return proposals.filter((p) => p.supervisorId === supervisorId);
   };
 
   return (
