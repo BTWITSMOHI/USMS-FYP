@@ -82,6 +82,7 @@ export function StudentDashboard() {
   const { enqueueSnackbar } = useSnackbar();
 
   const [showProposalForm, setShowProposalForm] = useState(false);
+  const [editingProposal, setEditingProposal] = useState<Proposal | null>(null);
   const [selectedProposal, setSelectedProposal] = useState<Proposal | null>(null);
   const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState(0);
@@ -363,7 +364,10 @@ export function StudentDashboard() {
                   </p>
                   <Button
                     variant="contained"
-                    onClick={() => setShowProposalForm(true)}
+                    onClick={() => {
+                      setEditingProposal(null);
+                      setShowProposalForm(true);
+                    }}
                     startIcon={<FileText className="h-4 w-4" />}
                   >
                     Create Proposal
@@ -375,17 +379,38 @@ export function StudentDashboard() {
             {showProposalForm && (
               <Card>
                 <CardHeader
-                  title="New Project Proposal"
-                  subheader="Fill in the details below to submit your proposal"
+                  title={editingProposal ? 'Edit Proposal' : 'New Project Proposal'}
+                  subheader={
+                    editingProposal
+                      ? 'Update the details of your pending proposal'
+                      : 'Fill in the details below to submit your proposal'
+                  }
                 />
                 <CardContent>
                   <ProposalForm
+                    mode={editingProposal ? 'edit' : 'create'}
+                    proposalId={editingProposal?.id}
+                    initialValues={
+                      editingProposal
+                        ? {
+                            title: editingProposal.title,
+                            description: editingProposal.description,
+                            supervisorId: editingProposal.supervisorId ?? null,
+                            documentName: editingProposal.documentName ?? null,
+                            documentUrl: editingProposal.documentUrl ?? null,
+                          }
+                        : undefined
+                    }
                     onSuccess={async () => {
                       setShowProposalForm(false);
+                      setEditingProposal(null);
                       setActiveTab(0);
                       await loadData();
                     }}
-                    onCancel={() => setShowProposalForm(false)}
+                    onCancel={() => {
+                      setShowProposalForm(false);
+                      setEditingProposal(null);
+                    }}
                   />
                 </CardContent>
               </Card>
@@ -504,16 +529,30 @@ export function StudentDashboard() {
                               </Button>
                             )}
 
-                            {proposal.status !== 'approved' && (
-                              <Button
-                                variant="outlined"
-                                color="error"
-                                size="small"
-                                onClick={() => handleDeleteProposal(proposal.id)}
-                              >
-                                Delete
-                              </Button>
-                            )}
+                                {proposal.status === 'pending' && (
+                                  <Button
+                                    variant="outlined"
+                                    size="small"
+                                    onClick={() => {
+                                      setEditingProposal(proposal);
+                                      setShowProposalForm(true);
+                                      setActiveTab(0);
+                                    }}
+                                  >
+                                    Edit
+                                  </Button>
+                                )}
+
+                                {proposal.status !== 'approved' && (
+                                  <Button
+                                    variant="outlined"
+                                    color="error"
+                                    size="small"
+                                    onClick={() => handleDeleteProposal(proposal.id)}
+                                  >
+                                    Delete
+                                  </Button>
+                                )}
                           </div>
                         </div>
                       );

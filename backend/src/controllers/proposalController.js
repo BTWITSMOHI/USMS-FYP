@@ -309,6 +309,113 @@ const reviewProposal = async (request, reply) => {
   }
 };
 
+const updateProposal = async (request, reply) => {
+  try {
+    const user = request.user;
+    const proposalId = request.params.id;
+    const { title, description, supervisorId, documentName, documentUrl } =
+      request.body;
+
+    if (user.role !== 'student') {
+      return reply.code(403).send({
+        message: 'Only students can edit proposals',
+      });
+    }
+
+    const proposalCheck = await pool.query(
+      `
+      SELECT *
+      FROM proposals
+      WHERE id = $1
+      `,
+      [proposalId]
+    );
+
+    if (proposalCheck.rows.length === 0) {
+      return reply.code(404).send({
+        message: 'Proposal not found',
+      });
+    }
+
+    const proposal = proposalCheck.rows[0];
+
+    if (proposal.student_id !== user.id) {
+      return reply.code(403).send({
+        message: 'You can only edit your own proposals',
+      });
+    }
+
+    if (proposal.status !== 'pending') {
+      return reply.code(400).send({
+        message: 'Only pending proposals can be edited',
+      });
+    }
+
+    let validatedSupervisorId = proposal.supervisor_id;
+
+    if (supervisorId !== undefined) {
+      if (supervisorId === null || supervisorId === '') {
+        validatedSupervisorId = null;
+      } else {
+        const supervisorCheck = await pool.query(
+          `
+          SELECT id, role
+          FROM users
+          WHERE id = $1
+          `,
+          [supervisorId]
+        );
+
+        if (supervisorCheck.rows.length === 0) {
+          return reply.code(404).send({
+            message: 'Selected supervisor not found',
+          });
+        }
+
+        if (supervisorCheck.rows[0].role !== 'supervisor') {
+          return reply.code(400).send({
+            message: 'Selected user is not a supervisor',
+          });
+        }
+
+        validatedSupervisorId = supervisorId;
+      }
+    }
+
+    const result = await pool.query(
+      `
+      UPDATE proposals
+      SET
+        title = COALESCE($1, title),
+        description = COALESCE($2, description),
+        supervisor_id = $3,
+        document_name = $4,
+        document_url = $5
+      WHERE id = $6
+      RETURNING *
+      `,
+      [
+        title ?? proposal.title,
+        description ?? proposal.description,
+        validatedSupervisorId,
+        documentName ?? proposal.document_name,
+        documentUrl ?? proposal.document_url,
+        proposalId,
+      ]
+    );
+
+    return reply.send({
+      message: 'Proposal updated successfully',
+      proposal: result.rows[0],
+    });
+  } catch (error) {
+    console.error('Update proposal error:', error);
+    return reply.code(500).send({
+      message: 'Internal server error',
+    });
+  }
+};
+
 const deleteProposal = async (request, reply) => {
   try {
     const user = request.user;
@@ -373,5 +480,6 @@ module.exports = {
   getProposals,
   assignSupervisor,
   reviewProposal,
+  updateProposal,
   deleteProposal,
 };

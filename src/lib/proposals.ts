@@ -63,3 +63,21 @@ export async function deleteProposal(
     token,
   });
 }
+
+export async function updateProposal(
+  token: string,
+  proposalId: number | string,
+  data: {
+    title?: string;
+    description?: string;
+    supervisorId?: number | null;
+    documentName?: string | null;
+    documentUrl?: string | null;
+  }
+) {
+  return apiRequest<{ message: string; proposal: any }>(`/proposals/${proposalId}`, {
+    method: 'PATCH',
+    token,
+    body: data,
+  });
+}

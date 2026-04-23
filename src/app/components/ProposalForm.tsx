@@ -3,7 +3,11 @@
 import { useEffect, useState } from 'react';
 import { useSnackbar } from 'notistack';
 import { useAuth } from '@/contexts/AuthContext';
-import { createProposal, fetchSupervisors } from '@/lib/proposals';
+import {
+  createProposal,
+  fetchSupervisors,
+  updateProposal,
+} from '@/lib/proposals';
 import TextField from '@mui/material/TextField';
 import Button from '@mui/material/Button';
 import Box from '@mui/material/Box';
@@ -13,6 +17,15 @@ import CircularProgress from '@mui/material/CircularProgress';
 interface ProposalFormProps {
   onSuccess?: () => void | Promise<void>;
   onCancel?: () => void;
+  mode?: 'create' | 'edit';
+  proposalId?: number | string;
+  initialValues?: {
+    title?: string;
+    description?: string;
+    supervisorId?: number | null;
+    documentName?: string | null;
+    documentUrl?: string | null;
+  };
 }
 
 interface SupervisorOption {
@@ -32,16 +45,32 @@ const fieldSx = {
   },
 };
 
-export function ProposalForm({ onSuccess, onCancel }: ProposalFormProps) {
+export function ProposalForm({
+  onSuccess,
+  onCancel,
+  mode = 'create',
+  proposalId,
+  initialValues,
+}: ProposalFormProps) {
   const { token } = useAuth();
   const { enqueueSnackbar } = useSnackbar();
 
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
-  const [supervisorId, setSupervisorId] = useState('any');
+  const [title, setTitle] = useState(initialValues?.title || '');
+  const [description, setDescription] = useState(initialValues?.description || '');
+  const [supervisorId, setSupervisorId] = useState<string>(
+    initialValues?.supervisorId ? String(initialValues.supervisorId) : 'any'
+  );
   const [supervisors, setSupervisors] = useState<SupervisorOption[]>([]);
   const [loadingSupervisors, setLoadingSupervisors] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    setTitle(initialValues?.title || '');
+    setDescription(initialValues?.description || '');
+    setSupervisorId(
+      initialValues?.supervisorId ? String(initialValues.supervisorId) : 'any'
+    );
+  }, [initialValues]);
 
   useEffect(() => {
     const loadSupervisors = async () => {
@@ -85,6 +114,7 @@ export function ProposalForm({ onSuccess, onCancel }: ProposalFormProps) {
           ? {
               title: title.trim(),
               description: description.trim(),
+              supervisorId: null,
             }
           : {
               title: title.trim(),
@@ -92,20 +122,34 @@ export function ProposalForm({ onSuccess, onCancel }: ProposalFormProps) {
               supervisorId: Number(supervisorId),
             };
 
-      await createProposal(token, payload as any);
+      if (mode === 'edit') {
+        if (!proposalId) {
+          enqueueSnackbar('Missing proposal ID for edit', { variant: 'error' });
+          return;
+        }
 
-      enqueueSnackbar('Proposal submitted successfully', { variant: 'success' });
+        await updateProposal(token, proposalId, payload as any);
+        enqueueSnackbar('Proposal updated successfully', { variant: 'success' });
+      } else {
+        await createProposal(token, payload as any);
+        enqueueSnackbar('Proposal submitted successfully', { variant: 'success' });
 
-      setTitle('');
-      setDescription('');
-      setSupervisorId('any');
+        setTitle('');
+        setDescription('');
+        setSupervisorId('any');
+      }
 
       if (onSuccess) {
         await onSuccess();
       }
     } catch (error) {
-      console.error('Proposal submit error:', error);
-      enqueueSnackbar('Failed to submit proposal', { variant: 'error' });
+      console.error('Proposal submit/update error:', error);
+      enqueueSnackbar(
+        mode === 'edit'
+          ? 'Failed to update proposal'
+          : 'Failed to submit proposal',
+        { variant: 'error' }
+      );
     } finally {
       setSubmitting(false);
     }
@@ -153,7 +197,7 @@ export function ProposalForm({ onSuccess, onCancel }: ProposalFormProps) {
         <MenuItem value="any">Any Supervisor</MenuItem>
 
         {supervisors.map((supervisor) => (
-          <MenuItem key={supervisor.id} value={supervisor.id}>
+          <MenuItem key={supervisor.id} value={String(supervisor.id)}>
             {supervisor.name}
             {supervisor.expertise ? ` — ${supervisor.expertise}` : ''}
           </MenuItem>
@@ -174,7 +218,13 @@ export function ProposalForm({ onSuccess, onCancel }: ProposalFormProps) {
             textTransform: 'none',
           }}
         >
-          {submitting ? 'Submitting...' : 'Submit Proposal'}
+          {submitting
+            ? mode === 'edit'
+              ? 'Saving...'
+              : 'Submitting...'
+            : mode === 'edit'
+              ? 'Save Changes'
+              : 'Submit Proposal'}
         </Button>
 
         {onCancel && (
